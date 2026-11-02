@@ -1,28 +1,32 @@
 package wueffi.taskmanager.client.mixin;
 
-import com.mojang.blaze3d.opengl.GlProgram;
-import com.mojang.blaze3d.opengl.GlShaderModule;
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.preprocessor.GlslPreprocessor;
+import com.mojang.blaze3d.shaders.Program;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import wueffi.taskmanager.client.ShaderCompilationProfiler;
 import wueffi.taskmanager.client.ProfilerManager;
+import wueffi.taskmanager.client.ShaderCompilationProfiler;
 
-@Mixin(GlProgram.class)
+import java.io.InputStream;
+
+/**
+ * In 1.21.1 every GLSL stage is compiled through {@link Program#compileShader}.
+ */
+@Mixin(Program.class)
 public abstract class ShaderProgramMixin {
 
-    @Inject(method = "link", at = @At("HEAD"))
-    private static void taskmanager$beginShaderCompile(GlShaderModule vertexShader, GlShaderModule fragmentShader, VertexFormat[] vertexFormats, String debugLabel, CallbackInfoReturnable<GlProgram> cir) {
+    @Inject(method = "compileShader", at = @At("HEAD"), require = 0)
+    private static void taskmanager$beginShaderCompile(Program.Type type, String name, InputStream shaderData, String sourceName, GlslPreprocessor preprocessor, CallbackInfoReturnable<Program> cir) {
         if (!ProfilerManager.getInstance().shouldCollectDetailedMetrics()) {
             return;
         }
-        ShaderCompilationProfiler.getInstance().beginCompile(debugLabel);
+        ShaderCompilationProfiler.getInstance().beginCompile(name + " (" + type.getName() + ")");
     }
 
-    @Inject(method = "link", at = @At("RETURN"))
-    private static void taskmanager$endShaderCompile(GlShaderModule vertexShader, GlShaderModule fragmentShader, VertexFormat[] vertexFormats, String debugLabel, CallbackInfoReturnable<GlProgram> cir) {
+    @Inject(method = "compileShader", at = @At("RETURN"), require = 0)
+    private static void taskmanager$endShaderCompile(Program.Type type, String name, InputStream shaderData, String sourceName, GlslPreprocessor preprocessor, CallbackInfoReturnable<Program> cir) {
         if (!ProfilerManager.getInstance().shouldCollectDetailedMetrics()) {
             return;
         }

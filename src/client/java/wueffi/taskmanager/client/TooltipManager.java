@@ -3,7 +3,7 @@ package wueffi.taskmanager.client;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 
@@ -24,7 +24,7 @@ final class TooltipManager {
         tooltipTargets.add(new TooltipTarget(x, y, width, height, text));
     }
 
-    void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, int screenWidth, int screenHeight, Font textRenderer, int textColor, int borderColor) {
+    void render(GuiGraphics ctx, int mouseX, int mouseY, int screenWidth, int screenHeight, Font textRenderer, int textColor, int borderColor) {
         TooltipTarget target = null;
         for (TooltipTarget candidate : tooltipTargets) {
             if (isInside(mouseX, mouseY, candidate.x(), candidate.y(), candidate.width(), candidate.height())) {
@@ -51,7 +51,7 @@ final class TooltipManager {
         ctx.fill(boxX + boxW - 1, boxY, boxX + boxW, boxY + boxH, borderColor);
         int textY = boxY + 4;
         for (FormattedCharSequence line : wrapped) {
-            ctx.text(textRenderer, line, boxX + 5, textY, textColor, false);
+            ctx.drawString(textRenderer, line, boxX + 5, textY, textColor, false);
             textY += 12;
         }
     }

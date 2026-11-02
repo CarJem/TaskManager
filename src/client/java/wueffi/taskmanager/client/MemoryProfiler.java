@@ -423,7 +423,7 @@ public class MemoryProfiler {
             for (StackTraceElement element : stack) {
                 String mod = ModClassIndex.getModForClassName(element.getClassName());
                 if (mod != null) {
-                    if ("fabricloader".equals(mod) || mod.startsWith("fabric-") || mod.startsWith("fabric_api")) {
+                    if ("fabricloader".equals(mod) || "neoforge".equals(mod) || "fml".equals(mod) || mod.startsWith("fabric-") || mod.startsWith("fabric_api")) {
                         return "shared/framework";
                     }
                     return mod;
@@ -500,6 +500,9 @@ public class MemoryProfiler {
         if (className.startsWith("net.fabricmc.")) {
             return "net.fabricmc";
         }
+        if (className.startsWith("net.neoforged.")) {
+            return "net.neoforged";
+        }
         if (className.startsWith("org.spongepowered.")) {
             return "org.spongepowered";
         }
@@ -512,7 +515,7 @@ public class MemoryProfiler {
     private String resolveHistogramMod(String className) {
         String mod = ModClassIndex.getModForClassName(className);
         if (mod != null) {
-            if ("fabricloader".equals(mod) || mod.startsWith("fabric-") || mod.startsWith("fabric_api")) {
+            if ("fabricloader".equals(mod) || "neoforge".equals(mod) || "fml".equals(mod) || mod.startsWith("fabric-") || mod.startsWith("fabric_api")) {
                 return "shared/framework";
             }
             return mod;
@@ -534,7 +537,7 @@ public class MemoryProfiler {
             return "minecraft";
         }
 
-        if (sanitized.startsWith("net.fabricmc.") || sanitized.startsWith("org.spongepowered.asm.")) {
+        if (sanitized.startsWith("net.fabricmc.") || sanitized.startsWith("net.neoforged.") || sanitized.startsWith("cpw.mods.") || sanitized.startsWith("org.spongepowered.asm.")) {
             return "shared/framework";
         }
 

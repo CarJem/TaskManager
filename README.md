@@ -2,7 +2,7 @@
 
 # Task Manager
 
-Task Manager is a Fabric client profiler for modded Minecraft that helps you identify frame drops, high MSPT, hot mods, rendering spikes, block-entity pressure, and JVM/runtime issues while the game is still running.
+Task Manager is a NeoForge client profiler for modded Minecraft 1.21.1 that helps you identify frame drops, high MSPT, hot mods, rendering spikes, block-entity pressure, and JVM/runtime issues while the game is still running.
 
 Open the profiler in-game with `F12`. Toggle the HUD with `F10` and export Sessions using `F9`.
 
@@ -11,7 +11,7 @@ Open the profiler in-game with `F12`. Toggle the HUD with `F10` and export Sessi
 - Live per-mod CPU attribution with sampled stack ownership and event invokes shown separately
 - Estimated per-mod GPU attribution using render-thread sampling plus measured GPU timer-query time
 - Per-mod memory estimates, shared JVM/runtime buckets, and top live class families
-- Loader-aware startup timing measured from Fabric entrypoint execution and shown explicitly in `ms`
+- Startup registration activity per mod, attributed from the registries once loading finishes
 - Timeline graphs for frametime, FPS, network throughput, and disk throughput
 - World diagnostics with `Lag Map` and `Block Entities` mini-tabs
 - JVM thread diagnostics, waits/locks, and sensor/runtime health in the System tab
@@ -25,7 +25,7 @@ Open the profiler in-game with `F12`. Toggle the HUD with `F10` and export Sessi
 - `Tasks`: per-mod CPU share, sampled threads, sample counts, invokes, filtering, sorting, and row detail
 - `GPU`: estimated per-mod GPU share, render samples, thread counts, filtering, sorting, and row detail
 - `Render`: render-phase CPU/GPU timings and call counts
-- `Startup`: Fabric startup/entrypoint timing by mod in explicit milliseconds
+- `Startup`: startup registration activity by mod
 - `Memory`: per-mod heap estimates, shared JVM buckets, top classes, filtering, sorting, and shared-family drilldown
 - `Flame`: sampled stack/flame-style hotspot view
 - `Timeline`: frametime, FPS, jitter, variance, frame percentiles, GPU frame time, and MSPT overview

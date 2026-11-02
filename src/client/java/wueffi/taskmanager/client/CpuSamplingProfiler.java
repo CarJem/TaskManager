@@ -426,7 +426,7 @@ public class CpuSamplingProfiler {
             return "shared/jvm";
         }
 
-        if (className.startsWith("net.fabricmc.") || className.startsWith("org.spongepowered.asm.")) {
+        if (className.startsWith("net.fabricmc.") || className.startsWith("net.neoforged.") || className.startsWith("cpw.mods.") || className.startsWith("org.spongepowered.asm.")) {
             return "shared/framework";
         }
 
@@ -435,10 +435,12 @@ public class CpuSamplingProfiler {
 
     private boolean isFrameworkMod(String mod, String className) {
         return "shared/framework".equals(mod)
-                || "fabricloader".equals(mod)
+                || "fabricloader".equals(mod) || "neoforge".equals(mod) || "fml".equals(mod)
                 || mod.startsWith("fabric-")
                 || mod.startsWith("fabric_api")
                 || className.startsWith("net.fabricmc.")
+                || className.startsWith("net.neoforged.")
+                || className.startsWith("cpw.mods.")
                 || className.startsWith("org.spongepowered.asm.");
     }
 

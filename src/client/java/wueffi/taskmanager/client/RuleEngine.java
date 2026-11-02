@@ -1,6 +1,6 @@
 package wueffi.taskmanager.client;
 
-import net.fabricmc.loader.api.FabricLoader;
+import wueffi.taskmanager.client.util.LoaderCompat;
 import wueffi.taskmanager.client.util.ConfigManager;
 
 import java.lang.management.ManagementFactory;
@@ -33,7 +33,7 @@ final class RuleEngine {
         } else if (xms != null && xms.equalsIgnoreCase(xmx)) {
             advice.add("Xms matches Xmx (" + xmx + "). Keeping the whole heap committed from startup is not always helpful; reduce Xms if startup memory commit is a concern.");
         }
-        if (system.vramPagingActive() && FabricLoader.getInstance().isModLoaded("iris")) {
+        if (system.vramPagingActive() && LoaderCompat.isModLoaded("iris")) {
             advice.add("VRAM paging is active with Iris/shaders enabled. Reduce shader or texture load before reaching for JVM-only tuning.");
         }
         if (advice.isEmpty()) {

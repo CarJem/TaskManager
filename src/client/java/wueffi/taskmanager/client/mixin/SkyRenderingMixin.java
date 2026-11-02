@@ -1,56 +1,32 @@
 package wueffi.taskmanager.client.mixin;
 
-// import net.minecraft.world.MoonPhase;
-import org.spongepowered.asm.mixin.Unique;
-import wueffi.taskmanager.client.RenderPhaseProfiler;
-import wueffi.taskmanager.client.TaskManagerScreen;
-import wueffi.taskmanager.client.util.GpuTimer;
-import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.renderer.SkyRenderer;
+import net.minecraft.client.renderer.LevelRenderer;
 import org.spongepowered.asm.mixin.Mixin;
-import wueffi.taskmanager.client.ProfilerManager;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import wueffi.taskmanager.client.ProfilerManager;
+import wueffi.taskmanager.client.RenderPhaseProfiler;
+import wueffi.taskmanager.client.util.GpuTimer;
 
-@Mixin(SkyRenderer.class)
+/**
+ * 1.21.1 has no dedicated SkyRenderer; the whole sky (sun, moon, stars, sky dome) is drawn by
+ * {@link LevelRenderer#renderSky}. The phase keeps its original name so exported sessions stay comparable.
+ */
+@Mixin(LevelRenderer.class)
 public class SkyRenderingMixin {
 
-    @Inject(
-            method = "renderSunMoonAndStars",
-            at = @At("HEAD")
-    )
-    private void taskmanager$onSkyHead(
-            PoseStack matrices,
-            float sunAngle,
-            float moonAngle,
-            float starAngle,
-            net.minecraft.world.level.MoonPhase moonPhase,
-            float alpha,
-            float starBrightness,
-            CallbackInfo ci) {
-
+    @Inject(method = "renderSky", at = @At("HEAD"), require = 0)
+    private void taskmanager$onSkyHead(CallbackInfo ci) {
         if (!ProfilerManager.getInstance().shouldCollectDetailedMetrics()) return;
-        RenderPhaseProfiler.getInstance().beginCpuPhase("sky.renderCelestialBodies", "shared/render");
-        GpuTimer.begin("sky.renderCelestialBodies");
+        RenderPhaseProfiler.getInstance().beginCpuPhase("worldRenderer.renderSky", "shared/render");
+        GpuTimer.begin("worldRenderer.renderSky");
     }
 
-    @Inject(
-            method = "renderSunMoonAndStars",
-            at = @At("TAIL")
-    )
-    private void taskmanager$onSkyTail(
-            PoseStack matrices,
-            float sunAngle,
-            float moonAngle,
-            float starAngle,
-            net.minecraft.world.level.MoonPhase moonPhase,
-            float alpha,
-            float starBrightness,
-            CallbackInfo ci) {
-
+    @Inject(method = "renderSky", at = @At("TAIL"), require = 0)
+    private void taskmanager$onSkyTail(CallbackInfo ci) {
         if (!ProfilerManager.getInstance().shouldCollectDetailedMetrics()) return;
-        GpuTimer.end("sky.renderCelestialBodies");
-        RenderPhaseProfiler.getInstance().endCpuPhase("sky.renderCelestialBodies");
+        GpuTimer.end("worldRenderer.renderSky");
+        RenderPhaseProfiler.getInstance().endCpuPhase("worldRenderer.renderSky");
     }
 }

@@ -2,7 +2,7 @@
   "required": true,
   "minVersion": "0.8",
   "package": "wueffi.taskmanager.client.mixin",
-  "compatibilityLevel": "JAVA_25",
+  "compatibilityLevel": "JAVA_21",
   "client": [
     "GameRendererMixin",
     "IrisDeferredWorldRenderingPipelineMixin",
@@ -21,7 +21,6 @@
     "EntityMixin",
     "EntityRenderManagerMixin",
     "ShaderProgramMixin",
-    "ArrayBackedEventMixin",
     "ClientConnectionMixin"
   ],
   "injectors": {

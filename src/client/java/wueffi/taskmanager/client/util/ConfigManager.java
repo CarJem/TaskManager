@@ -2,7 +2,6 @@ package wueffi.taskmanager.client.util;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import net.fabricmc.loader.api.FabricLoader;
 import wueffi.taskmanager.client.ProfilerManager;
 
 import java.io.IOException;
@@ -83,7 +82,7 @@ public class ConfigManager {
 
     private static Path resolveConfigPath() {
         try {
-            Path configDir = FabricLoader.getInstance().getConfigDir();
+            Path configDir = LoaderCompat.getConfigDir();
             if (configDir != null) {
                 return configDir.resolve("taskmanager.json");
             }

@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
@@ -13,7 +13,7 @@ final class WorldTabRenderer {
     private WorldTabRenderer() {
     }
 
-    static void render(TaskManagerScreen screen, GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+    static void render(TaskManagerScreen screen, GuiGraphics ctx, int x, int y, int w, int h) {
         var textRenderer = screen.uiTextRenderer();
         int left = x + TaskManagerScreen.PADDING;
         screen.beginFullPageScissor(ctx, x, y, w, h);
@@ -34,15 +34,15 @@ final class WorldTabRenderer {
         tabX += chunksTabW + 6;
         screen.drawTopChip(ctx, tabX, layout.miniTabY(), blockTabW, 16, screen.worldMiniTab == TaskManagerScreen.WorldMiniTab.BLOCK_ENTITIES);
         tabX = left;
-        ctx.text(textRenderer, "Lag Map", tabX + 16, layout.miniTabY() + 4, screen.worldMiniTab == TaskManagerScreen.WorldMiniTab.LAG_MAP ? TaskManagerScreen.TEXT_PRIMARY : TaskManagerScreen.TEXT_DIM, false);
+        ctx.drawString(textRenderer, "Lag Map", tabX + 16, layout.miniTabY() + 4, screen.worldMiniTab == TaskManagerScreen.WorldMiniTab.LAG_MAP ? TaskManagerScreen.TEXT_PRIMARY : TaskManagerScreen.TEXT_DIM, false);
         tabX += lagTabW + 6;
-        ctx.text(textRenderer, "Entities", tabX + 12, layout.miniTabY() + 4, screen.worldMiniTab == TaskManagerScreen.WorldMiniTab.ENTITIES ? TaskManagerScreen.TEXT_PRIMARY : TaskManagerScreen.TEXT_DIM, false);
+        ctx.drawString(textRenderer, "Entities", tabX + 12, layout.miniTabY() + 4, screen.worldMiniTab == TaskManagerScreen.WorldMiniTab.ENTITIES ? TaskManagerScreen.TEXT_PRIMARY : TaskManagerScreen.TEXT_DIM, false);
         tabX += entitiesTabW + 6;
-        ctx.text(textRenderer, "Chunks", tabX + 14, layout.miniTabY() + 4, screen.worldMiniTab == TaskManagerScreen.WorldMiniTab.CHUNKS ? TaskManagerScreen.TEXT_PRIMARY : TaskManagerScreen.TEXT_DIM, false);
+        ctx.drawString(textRenderer, "Chunks", tabX + 14, layout.miniTabY() + 4, screen.worldMiniTab == TaskManagerScreen.WorldMiniTab.CHUNKS ? TaskManagerScreen.TEXT_PRIMARY : TaskManagerScreen.TEXT_DIM, false);
         tabX += chunksTabW + 6;
-        ctx.text(textRenderer, "Block Entities", tabX + 14, layout.miniTabY() + 4, screen.worldMiniTab == TaskManagerScreen.WorldMiniTab.BLOCK_ENTITIES ? TaskManagerScreen.TEXT_PRIMARY : TaskManagerScreen.TEXT_DIM, false);
+        ctx.drawString(textRenderer, "Block Entities", tabX + 14, layout.miniTabY() + 4, screen.worldMiniTab == TaskManagerScreen.WorldMiniTab.BLOCK_ENTITIES ? TaskManagerScreen.TEXT_PRIMARY : TaskManagerScreen.TEXT_DIM, false);
         int findingsCount = ProfilerManager.getInstance().getLatestRuleFindings().size();
-        ctx.text(textRenderer, String.format(Locale.ROOT, "Selected chunk: %s | hot chunks: %d | findings: %d", screen.selectedLagChunk == null ? "none" : (screen.selectedLagChunk.x() + "," + screen.selectedLagChunk.z()), ProfilerManager.getInstance().getLatestHotChunks().size(), findingsCount), left, layout.summaryY(), TaskManagerScreen.TEXT_DIM, false);
+        ctx.drawString(textRenderer, String.format(Locale.ROOT, "Selected chunk: %s | hot chunks: %d | findings: %d", screen.selectedLagChunk == null ? "none" : (screen.selectedLagChunk.x + "," + screen.selectedLagChunk.z), ProfilerManager.getInstance().getLatestHotChunks().size(), findingsCount), left, layout.summaryY(), TaskManagerScreen.TEXT_DIM, false);
         SystemMetricsProfiler metrics = SystemMetricsProfiler.getInstance();
         int worldGraphWidth = screen.getPreferredGraphWidth(w);
         int worldGraphX = x + Math.max(TaskManagerScreen.PADDING, (w - worldGraphWidth) / 2);
@@ -52,10 +52,10 @@ final class WorldTabRenderer {
             screen.renderLagMap(ctx, layout.left(), layout.mapRenderY(), layout.mapWidth(), layout.mapHeight());
             top = layout.mapTop() + (layout.cell() * ((layout.radius() * 2) + 1)) + 18;
             top = screen.renderLagChunkDetail(ctx, left, top, w - 24, h - 40) + 8;
-            ctx.text(textRenderer, "Top thread CPU load", left, top, TaskManagerScreen.TEXT_PRIMARY, false);
+            ctx.drawString(textRenderer, "Top thread CPU load", left, top, TaskManagerScreen.TEXT_PRIMARY, false);
             top += 16;
             if (screen.snapshot.systemMetrics().threadLoadPercentByName().isEmpty()) {
-                ctx.text(textRenderer, "Waiting for JVM thread CPU samples...", left, top, TaskManagerScreen.TEXT_DIM, false);
+                ctx.drawString(textRenderer, "Waiting for JVM thread CPU samples...", left, top, TaskManagerScreen.TEXT_DIM, false);
                 ctx.disableScissor();
                 return;
             }
@@ -108,14 +108,14 @@ final class WorldTabRenderer {
         } else {
             top = screen.renderBlockEntityHotspotSection(ctx, left, top, w - 24, ProfilerManager.getInstance().getLatestBlockEntityHotspots(), "Block Entity Hotspots") + 8;
             if (screen.selectedLagChunk != null) {
-                ctx.text(textRenderer, "Selected chunk block entities", left, top, TaskManagerScreen.TEXT_PRIMARY, false);
+                ctx.drawString(textRenderer, "Selected chunk block entities", left, top, TaskManagerScreen.TEXT_PRIMARY, false);
                 top += 14;
                 Minecraft client = Minecraft.getInstance();
                 Map<String, Integer> blockEntityCounts = new HashMap<>();
                 if (client.level != null) {
-                    for (BlockEntity blockEntity : client.level.getGloballyRenderedBlockEntities()) {
-                        ChunkPos chunkPos = ChunkPos.containing(blockEntity.getBlockPos());
-                        if (chunkPos.x() == screen.selectedLagChunk.x() && chunkPos.z() == screen.selectedLagChunk.z()) {
+                    for (BlockEntity blockEntity : wueffi.taskmanager.client.util.ClientLevelCompat.blockEntities(client.level)) {
+                        ChunkPos chunkPos = new ChunkPos(blockEntity.getBlockPos());
+                        if (chunkPos.x == screen.selectedLagChunk.x && chunkPos.z == screen.selectedLagChunk.z) {
                             blockEntityCounts.merge(screen.cleanProfilerLabel(blockEntity.getClass().getSimpleName()), 1, Integer::sum);
                         }
                     }

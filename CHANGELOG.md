@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0+neoforge-1.21.1
+
+Port of Task Manager from Fabric (Minecraft 26.2) to NeoForge for Minecraft 1.21.1.
+
+### Changed
+
+- Build switched from Fabric Loom to NeoForge ModDevGradle; targets Java 21
+- Mod metadata moved to `META-INF/neoforge.mods.toml`; the Mod Menu entry is replaced by NeoForge's built-in config screen button
+- Keybinds, HUD overlay and client tick hooks use NeoForge events (`RegisterKeyMappingsEvent`, `RegisterGuiLayersEvent`, `ClientTickEvent`)
+- Mod/class attribution uses NeoForge's mod list and JPMS module names instead of Fabric mod containers
+- Render, sky, particle, entity, shader, network and texture mixins retargeted to the 1.21.1 methods
+- Startup tab now counts registry entries per mod instead of timing Fabric event listeners
+
+### Removed
+
+- Per-listener Fabric event timing (`ArrayBackedEventMixin`), which has no NeoForge equivalent
+
 ## 1.2.4
 
 Task Manager 1.2.4 focuses on conflict analysis, clearer attribution, and more reliable session capture.

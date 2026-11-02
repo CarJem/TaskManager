@@ -5,7 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.fabricmc.loader.api.FabricLoader;
+import wueffi.taskmanager.client.util.LoaderCompat;
 import net.minecraft.client.Minecraft;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -209,7 +209,7 @@ final class SessionExporter {
     }
 
     private static Path sessionDirectory() {
-        return FabricLoader.getInstance().getGameDir().resolve("taskmanager-sessions");
+        return LoaderCompat.getGameDir().resolve("taskmanager-sessions");
     }
 
     private static Path baselineFile() {

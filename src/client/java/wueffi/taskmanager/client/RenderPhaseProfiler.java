@@ -1,6 +1,6 @@
 package wueffi.taskmanager.client;
 
-import net.fabricmc.loader.api.FabricLoader;
+import wueffi.taskmanager.client.util.LoaderCompat;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -273,7 +273,7 @@ public class RenderPhaseProfiler {
         }
         LinkedHashSet<String> ids = new LinkedHashSet<>();
         ids.add("minecraft");
-        FabricLoader.getInstance().getAllMods().forEach(mod -> ids.add(mod.getMetadata().getId().toLowerCase(Locale.ROOT)));
+        LoaderCompat.getAllModIds().forEach(id -> ids.add(id.toLowerCase(Locale.ROOT)));
         knownModIds = ids;
         return ids;
     }

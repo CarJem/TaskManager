@@ -2,7 +2,7 @@ package wueffi.taskmanager.client;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import net.fabricmc.loader.api.FabricLoader;
+import wueffi.taskmanager.client.util.LoaderCompat;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.Holder;
@@ -116,7 +116,7 @@ public class ProfilerManager {
     public record ExportMetadata(
             String taskManagerVersion,
             String minecraftVersion,
-            String fabricLoaderVersion,
+            String loaderVersion,
             String osName,
             String osVersion,
             String javaVersion,
@@ -826,8 +826,8 @@ public class ProfilerManager {
     public String getGraphicsPipelineSummary() {
         String shaderPack = detectShaderPackName();
         String sodiumThreads = detectSodiumChunkThreads();
-        boolean irisLoaded = FabricLoader.getInstance().isModLoaded("iris");
-        boolean sodiumLoaded = FabricLoader.getInstance().isModLoaded("sodium");
+        boolean irisLoaded = LoaderCompat.isModLoaded("iris");
+        boolean sodiumLoaded = LoaderCompat.isModLoaded("sodium");
         return "Iris " + (irisLoaded ? "on" : "off")
                 + " | Sodium " + (sodiumLoaded ? "on" : "off")
                 + " | shader " + shaderPack
@@ -965,7 +965,7 @@ public class ProfilerManager {
                     .setStyle(Style.EMPTY
                             .withColor(ChatFormatting.AQUA)
                             .withUnderlined(true)
-                            .withClickEvent(new ClickEvent.OpenFile(result.htmlReport().toAbsolutePath().toString())));
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE, result.htmlReport().toAbsolutePath().toString())));
             client.player.sendSystemMessage(openReport);
         }
         if (result.chromeTrace() != null) {
@@ -973,7 +973,7 @@ public class ProfilerManager {
                     .setStyle(Style.EMPTY
                             .withColor(ChatFormatting.GOLD)
                             .withUnderlined(true)
-                            .withClickEvent(new ClickEvent.OpenFile(result.chromeTrace().toAbsolutePath().toString())));
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE, result.chromeTrace().toAbsolutePath().toString())));
             client.player.sendSystemMessage(openTrace);
         }
         if (result.directory() != null) {
@@ -981,7 +981,7 @@ public class ProfilerManager {
                     .setStyle(Style.EMPTY
                             .withColor(ChatFormatting.GREEN)
                             .withUnderlined(true)
-                            .withClickEvent(new ClickEvent.OpenFile(result.directory().toAbsolutePath().toString())));
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE, result.directory().toAbsolutePath().toString())));
             client.player.sendSystemMessage(openFolder);
         }
     }
@@ -1309,7 +1309,7 @@ public class ProfilerManager {
         )).toList());
         startup.put("slowestMods", rows.stream().limit(10).map(row -> Map.of(
                 "mod", row.modId(),
-                "displayName", FabricLoader.getInstance().getModContainer(row.modId()).map(mod -> mod.getMetadata().getName()).orElse(row.modId()),
+                "displayName", LoaderCompat.getModName(row.modId()).orElse(row.modId()),
                 "activeMs", row.activeNanos() / 1_000_000.0,
                 "startMs", (row.first() - currentSnapshot.startupFirst()) / 1_000_000.0,
                 "endMs", (row.last() - currentSnapshot.startupFirst()) / 1_000_000.0,
@@ -1334,22 +1334,19 @@ public class ProfilerManager {
 
     private ExportMetadata buildExportMetadata() {
         Minecraft client = Minecraft.getInstance();
-        String taskManagerVersion = FabricLoader.getInstance().getModContainer("taskmanager")
-                .map(mod -> mod.getMetadata().getVersion().getFriendlyString())
+        String taskManagerVersion = LoaderCompat.getModVersion("taskmanager")
                 .orElse("unknown");
-        String minecraftVersion = FabricLoader.getInstance().getModContainer("minecraft")
-                .map(mod -> mod.getMetadata().getVersion().getFriendlyString())
+        String minecraftVersion = LoaderCompat.getModVersion("minecraft")
                 .orElse("unknown");
-        String loaderVersion = FabricLoader.getInstance().getModContainer("fabricloader")
-                .map(mod -> mod.getMetadata().getVersion().getFriendlyString())
+        String loaderVersion = LoaderCompat.getModVersion(LoaderCompat.LOADER_MOD_ID)
                 .orElse("unknown");
         String cpuInfo = HardwareInfoResolver.getCpuDisplayName();
         SystemMetricsProfiler.Snapshot system = SystemMetricsProfiler.getInstance().getSnapshot();
         String gpuInfo = (system.gpuVendor() == null || system.gpuVendor().isBlank() ? "Unknown GPU" : system.gpuVendor())
                 + " | " + (system.gpuRenderer() == null || system.gpuRenderer().isBlank() ? "Unknown renderer" : system.gpuRenderer());
         int guiScale = client != null ? client.options.guiScale().get() : -1;
-        java.util.List<String> modList = FabricLoader.getInstance().getAllMods().stream()
-                .map(mod -> mod.getMetadata().getId() + "@" + mod.getMetadata().getVersion().getFriendlyString())
+        java.util.List<String> modList = LoaderCompat.getAllMods().stream()
+                .map(mod -> mod.getModId() + "@" + mod.getVersion())
                 .sorted()
                 .toList();
         FrameTimelineProfiler frames = FrameTimelineProfiler.getInstance();
@@ -1431,8 +1428,8 @@ public class ProfilerManager {
 
     private Map<String, Object> buildGraphicsModSettings(Minecraft client) {
         Map<String, Object> settings = new LinkedHashMap<>();
-        settings.put("irisDetected", FabricLoader.getInstance().isModLoaded("iris"));
-        settings.put("sodiumDetected", FabricLoader.getInstance().isModLoaded("sodium"));
+        settings.put("irisDetected", LoaderCompat.isModLoaded("iris"));
+        settings.put("sodiumDetected", LoaderCompat.isModLoaded("sodium"));
         settings.put("shaderPack", detectShaderPackName());
         settings.put("chunkUpdateThreads", detectSodiumChunkThreads());
         settings.put("resourcePacks", detectEnabledResourcePacks(client));
@@ -1455,7 +1452,7 @@ public class ProfilerManager {
     }
 
     private String detectShaderPackName() {
-        Path gameDir = FabricLoader.getInstance().getGameDir();
+        Path gameDir = LoaderCompat.getGameDir();
         for (Path candidate : List.of(gameDir.resolve("config/iris.properties"), gameDir.resolve("optionsshaders.txt"))) {
             String value = readConfigValue(candidate, "shaderPack", "shaderPackName", "shader_pack", "packName");
             if (value != null) {
@@ -1466,7 +1463,7 @@ public class ProfilerManager {
     }
 
     private String detectSodiumChunkThreads() {
-        Path gameDir = FabricLoader.getInstance().getGameDir();
+        Path gameDir = LoaderCompat.getGameDir();
         for (Path candidate : List.of(gameDir.resolve("config/sodium-options.json"), gameDir.resolve("config/sodium-options.json5"))) {
             String value = readConfigValue(candidate, "chunkBuilderThreads", "chunk_build_threads", "chunkUpdateThreads");
             if (value != null) {
@@ -1601,7 +1598,7 @@ public class ProfilerManager {
         latestPerformanceAlert = nextAlert;
         performanceAlertFlashUntilMillis = now + 2_500L;
         if (ConfigManager.isPerformanceAlertChatEnabled() && client != null && client.gui != null) {
-            client.gui.hud.getChat().addClientSystemMessage(Component.literal("[Task Manager] " + nextAlert.message()).withStyle(ChatFormatting.YELLOW));
+            client.gui.getChat().addMessage(Component.literal("[Task Manager] " + nextAlert.message()).withStyle(ChatFormatting.YELLOW));
         }
     }
 
@@ -2267,7 +2264,7 @@ public class ProfilerManager {
         if (chunkPos == null) {
             return List.of();
         }
-        Deque<Integer> history = chunkActivityHistory.get(chunkKey(chunkPos.x(), chunkPos.z()));
+        Deque<Integer> history = chunkActivityHistory.get(chunkKey(chunkPos.x, chunkPos.z));
         return history == null ? List.of() : List.copyOf(history);
     }
 
@@ -2308,13 +2305,13 @@ public class ProfilerManager {
         Map<Long, Map<String, Integer>> blockEntityClasses = new LinkedHashMap<>();
         for (Entity entity : client.level.entitiesForRendering()) {
             ChunkPos pos = entity.chunkPosition();
-            long key = chunkKey(pos.x(), pos.z());
+            long key = chunkKey(pos.x, pos.z);
             counts.computeIfAbsent(key, ignored -> new int[2])[0]++;
             entityClasses.computeIfAbsent(key, ignored -> new LinkedHashMap<>()).merge(entity.getClass().getSimpleName(), 1, Integer::sum);
         }
-        for (BlockEntity blockEntity : client.level.getGloballyRenderedBlockEntities()) {
-            ChunkPos pos = ChunkPos.containing(blockEntity.getBlockPos());
-            long key = chunkKey(pos.x(), pos.z());
+        for (BlockEntity blockEntity : wueffi.taskmanager.client.util.ClientLevelCompat.blockEntities(client.level)) {
+            ChunkPos pos = new ChunkPos(blockEntity.getBlockPos());
+            long key = chunkKey(pos.x, pos.z);
             counts.computeIfAbsent(key, ignored -> new int[2])[1]++;
             blockEntityClasses.computeIfAbsent(key, ignored -> new LinkedHashMap<>()).merge(blockEntity.getClass().getSimpleName(), 1, Integer::sum);
         }
@@ -2420,7 +2417,7 @@ public class ProfilerManager {
             return List.of();
         }
         Map<String, Integer> counts = new LinkedHashMap<>();
-        for (BlockEntity blockEntity : client.level.getGloballyRenderedBlockEntities()) {
+        for (BlockEntity blockEntity : wueffi.taskmanager.client.util.ClientLevelCompat.blockEntities(client.level)) {
             counts.merge(blockEntity.getClass().getSimpleName(), 1, Integer::sum);
         }
         return counts.entrySet().stream()
@@ -2633,7 +2630,7 @@ public class ProfilerManager {
                 return "unknown";
             }
             Holder<?> biome = client.level.getBiome(client.player.blockPosition());
-            return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("unknown");
+            return biome.unwrapKey().map(key -> key.location().toString()).orElse("unknown");
         } catch (Throwable ignored) {
             return "unknown";
         }
@@ -2713,14 +2710,14 @@ public class ProfilerManager {
             String entityKey = entity.getType().toString();
             globalEntityCounts.merge(entityKey, 1, Integer::sum);
             ChunkPos pos = entity.chunkPosition();
-            long key = chunkKey(pos.x(), pos.z());
+            long key = chunkKey(pos.x, pos.z);
             chunkCounts.computeIfAbsent(key, ignored -> new int[2])[0]++;
             chunkEntityClasses.computeIfAbsent(key, ignored -> new LinkedHashMap<>()).merge(entity.getClass().getSimpleName(), 1, Integer::sum);
         }
 
         int blockEntities = 0;
         int sampledBlockEntities = 0;
-        for (BlockEntity blockEntity : client.level.getGloballyRenderedBlockEntities()) {
+        for (BlockEntity blockEntity : wueffi.taskmanager.client.util.ClientLevelCompat.blockEntities(client.level)) {
             blockEntities++;
             boolean includeInHotspotScan = sampledBlockEntities < MAX_WORLD_SCAN_BLOCK_ENTITIES
                     || (blockEntities - MAX_WORLD_SCAN_BLOCK_ENTITIES) % WORLD_SCAN_BLOCK_ENTITY_SAMPLE_STRIDE == 0;
@@ -2730,8 +2727,8 @@ public class ProfilerManager {
             sampledBlockEntities++;
             String blockEntityKey = blockEntity.getClass().getSimpleName();
             globalBlockEntityCounts.merge(blockEntityKey, 1, Integer::sum);
-            ChunkPos pos = ChunkPos.containing(blockEntity.getBlockPos());
-            long key = chunkKey(pos.x(), pos.z());
+            ChunkPos pos = new ChunkPos(blockEntity.getBlockPos());
+            long key = chunkKey(pos.x, pos.z);
             chunkCounts.computeIfAbsent(key, ignored -> new int[2])[1]++;
             chunkBlockEntityClasses.computeIfAbsent(key, ignored -> new LinkedHashMap<>()).merge(blockEntityKey, 1, Integer::sum);
         }
@@ -2804,7 +2801,7 @@ public class ProfilerManager {
             }
         }
 
-        int blockEntities = client.level.getGloballyRenderedBlockEntities().size();
+        int blockEntities = wueffi.taskmanager.client.util.ClientLevelCompat.blockEntities(client.level).size();
         return new EntityCounts(total, living, blockEntities);
     }
 
@@ -2819,7 +2816,7 @@ public class ProfilerManager {
         }
         lastChunkCountsAtMillis = now;
 
-        String debug = client.levelExtractor.sectionStatistics();
+        String debug = client.levelRenderer.getSectionStatistics();
         if (debug == null || debug.isBlank()) {
             return ChunkCounts.empty();
         }

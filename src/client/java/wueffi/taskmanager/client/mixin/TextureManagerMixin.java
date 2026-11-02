@@ -11,21 +11,24 @@ import wueffi.taskmanager.client.TextureUploadProfiler;
 
 import java.lang.reflect.Field;
 import java.util.Map;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.TextureManager;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 @Mixin(TextureManager.class)
 public class TextureManagerMixin {
 
     @Shadow @Final
-    private Map<Identifier, Object> byPath;
+    private Map<ResourceLocation, AbstractTexture> byPath;
 
-    @Inject(method = "registerForNextReload", at = @At("TAIL"), require = 0)
-    private void taskmanager$onRegisterTexture(Identifier id, CallbackInfo ci) {
+    @Inject(method = "register(Lnet/minecraft/resources/ResourceLocation;Lnet/minecraft/client/renderer/texture/AbstractTexture;)V", at = @At("TAIL"), require = 0)
+    private void taskmanager$onRegisterTexture(ResourceLocation id, AbstractTexture registered, CallbackInfo ci) {
         if (id == null) {
             return;
         }
-        Object texture = byPath == null ? null : byPath.get(id);
+        Object texture = registered != null ? registered : (byPath == null ? null : byPath.get(id));
         TextureUploadProfiler.getInstance().recordUpload(id.getNamespace(), taskmanager$estimateTextureBytes(texture), id.toString());
     }
 
@@ -33,6 +36,10 @@ public class TextureManagerMixin {
     private static long taskmanager$estimateTextureBytes(Object texture) {
         if (texture == null) {
             return 0L;
+        }
+        if (texture instanceof DynamicTexture dynamicTexture && dynamicTexture.getPixels() != null) {
+            NativeImage pixels = dynamicTexture.getPixels();
+            return (long) pixels.getWidth() * pixels.getHeight() * 4L;
         }
         int width = taskmanager$readIntField(texture, "width", "textureWidth", "field_5204");
         int height = taskmanager$readIntField(texture, "height", "textureHeight", "field_5205");

@@ -1,18 +1,15 @@
 package wueffi.taskmanager.client;
 
-import net.fabricmc.loader.api.FabricLoader;
+import wueffi.taskmanager.client.util.LoaderCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.CharacterEvent;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.StringUtil;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import org.lwjgl.opengl.GL11;
 import wueffi.taskmanager.client.AttributionModelBuilder.EffectiveCpuAttribution;
 import wueffi.taskmanager.client.AttributionModelBuilder.EffectiveGpuAttribution;
 import wueffi.taskmanager.client.AttributionModelBuilder.EffectiveMemoryAttribution;
@@ -306,7 +303,12 @@ public class TaskManagerScreen extends Screen {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
+        // The screen paints its own opaque background in render(); skip the vanilla blur/dirt pass.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         snapshot = ProfilerManager.getInstance().getCurrentSnapshot();
         invalidateDerivedAttributionCacheIfSnapshotChanged();
         findingClickTargets.clear();
@@ -317,16 +319,16 @@ public class TaskManagerScreen extends Screen {
         int logicalMouseY = toLogicalY(mouseY);
 
         ctx.fill(0, 0, this.width, this.height, BG_COLOR);
-        ctx.pose().pushMatrix();
-        ctx.pose().translate(uiOffsetX, uiOffsetY);
-        ctx.pose().scale(uiScale, uiScale);
+        ctx.pose().pushPose();
+        ctx.pose().translate(uiOffsetX, uiOffsetY, 0.0f);
+        ctx.pose().scale(uiScale, uiScale, 1.0f);
 
         int w = getScreenWidth();
         int h = getScreenHeight();
 
         ctx.fill(0, 0, w, h, BG_COLOR);
         ctx.fill(0, 0, w, 30, 0xFF0A0A0A);
-        ctx.text(font, "Task Manager", PADDING, 6, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Task Manager", PADDING, 6, TEXT_PRIMARY, false);
 
         renderModeButton(ctx, logicalMouseX, logicalMouseY);
         renderHudToggle(ctx, logicalMouseX, logicalMouseY);
@@ -345,9 +347,9 @@ public class TaskManagerScreen extends Screen {
                 snapshot.chunkCounts().loadedChunks(),
                 snapshot.chunkCounts().renderedChunks()
         );
-        ctx.text(font, font.plainSubstrByWidth(headerMetrics, w - 240), PADDING, 18, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth(headerMetrics, w - 240), PADDING, 18, TEXT_DIM, false);
         if (!snapshot.lastExportStatus().isBlank()) {
-            ctx.text(font, font.plainSubstrByWidth(snapshot.lastExportStatus(), 220), w - 226, 18, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth(snapshot.lastExportStatus(), 220), w - 226, 18, TEXT_DIM, false);
         }
 
         int tabY = getTabY();
@@ -358,7 +360,7 @@ public class TaskManagerScreen extends Screen {
             if (i == activeTab) ctx.fill(tx, tabY, tx + tabW, tabY + 2, ACCENT_GREEN);
             ctx.fill(tx, tabY + TAB_HEIGHT - 1, tx + tabW, tabY + TAB_HEIGHT, BORDER_COLOR);
             int textX = tx + (tabW - font.width(TAB_NAMES[i])) / 2;
-            ctx.text(font, TAB_NAMES[i], textX, tabY + 8, i == activeTab ? TEXT_PRIMARY : TEXT_DIM, false);
+            ctx.drawString(font, TAB_NAMES[i], textX, tabY + 8, i == activeTab ? TEXT_PRIMARY : TEXT_DIM, false);
         }
 
         int contentY = getContentY();
@@ -369,10 +371,16 @@ public class TaskManagerScreen extends Screen {
         TAB_RENDERERS[Math.max(0, Math.min(TAB_RENDERERS.length - 1, activeTab))]
                 .render(ctx, this, 0, contentY, w, contentH, logicalMouseX, logicalMouseY);
 
+        // 1.21.1 batches text and fills separately and relies on depth to layer them, so lift
+        // modals and tooltips above the page content instead of relying on draw order.
+        ctx.pose().pushPose();
+        ctx.pose().translate(0.0f, 0.0f, 200.0f);
         ModalDialogRenderer.render(this, ctx, w, h, logicalMouseX, logicalMouseY);
+        ctx.pose().translate(0.0f, 0.0f, 200.0f);
         renderTooltipOverlay(ctx, logicalMouseX, logicalMouseY);
-        ctx.pose().popMatrix();
-        super.extractRenderState(ctx, mouseX, mouseY, delta);
+        ctx.pose().popPose();
+        ctx.pose().popPose();
+        super.render(ctx, mouseX, mouseY, delta);
     }
 
     private void updateUiScale() {
@@ -412,13 +420,13 @@ public class TaskManagerScreen extends Screen {
         return getTabY() + TAB_HEIGHT + 1;
     }
 
-    void drawTopChip(GuiGraphicsExtractor ctx, int x, int y, int width, int height, boolean hovered) {
+    void drawTopChip(GuiGraphics ctx, int x, int y, int width, int height, boolean hovered) {
         ctx.fill(x, y, x + width, y + height, hovered ? 0x66404040 : 0x3A202020);
         ctx.fill(x, y, x + width, y + 1, PANEL_OUTLINE);
         ctx.fill(x, y + height - 1, x + width, y + height, PANEL_OUTLINE);
     }
 
-    private void drawInsetPanel(GuiGraphicsExtractor ctx, int x, int y, int width, int height) {
+    private void drawInsetPanel(GuiGraphics ctx, int x, int y, int width, int height) {
         ctx.fill(x, y, x + width, y + height, PANEL_SOFT);
         ctx.fill(x, y, x + width, y + 1, PANEL_OUTLINE);
         ctx.fill(x, y + height - 1, x + width, y + height, PANEL_OUTLINE);
@@ -426,26 +434,26 @@ public class TaskManagerScreen extends Screen {
         ctx.fill(x + width - 1, y, x + width, y + height, PANEL_OUTLINE);
     }
 
-    int renderSectionHeader(GuiGraphicsExtractor ctx, int x, int y, String title, String subtitle) {
-        ctx.text(font, title, x, y, TEXT_PRIMARY, false);
+    int renderSectionHeader(GuiGraphics ctx, int x, int y, String title, String subtitle) {
+        ctx.drawString(font, title, x, y, TEXT_PRIMARY, false);
         if (subtitle != null && !subtitle.isBlank()) {
-            ctx.text(font, font.plainSubstrByWidth(subtitle, Math.max(120, getScreenWidth() - (x * 2))), x, y + 12, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth(subtitle, Math.max(120, getScreenWidth() - (x * 2))), x, y + 12, TEXT_DIM, false);
             return y + 28;
         }
         return y + 16;
     }
 
-    private void renderModeButton(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+    private void renderModeButton(GuiGraphics ctx, int mouseX, int mouseY) {
         int x = PADDING + 106;
         int y = 3;
         int w = 132;
         int h = 14;
         boolean hovered = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
         drawTopChip(ctx, x, y, w, h, hovered);
-        ctx.text(font, "Mode: " + formatMode(snapshot.mode()), x + 8, y + 3, hovered ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, "Mode: " + formatMode(snapshot.mode()), x + 8, y + 3, hovered ? TEXT_PRIMARY : TEXT_DIM, false);
     }
 
-    private void renderHudToggle(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+    private void renderHudToggle(GuiGraphics ctx, int mouseX, int mouseY) {
         int checkX = getScreenWidth() - 254;
         int checkY = 3;
         int chipW = 96;
@@ -455,61 +463,61 @@ public class TaskManagerScreen extends Screen {
         ctx.fill(checkX + 6, checkY + 3, checkX + 16, checkY + 13, hovered ? 0xFF444444 : 0xFF2A2A2A);
         ctx.fill(checkX + 7, checkY + 4, checkX + 15, checkY + 12, 0xFF1A1A1A);
         if (ConfigManager.isHudEnabled()) ctx.fill(checkX + 8, checkY + 5, checkX + 14, checkY + 11, ACCENT_GREEN);
-        ctx.text(font, "HUD overlay", checkX + 20, checkY + 3, hovered ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, "HUD overlay", checkX + 20, checkY + 3, hovered ? TEXT_PRIMARY : TEXT_DIM, false);
     }
 
-    private void renderExportButton(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+    private void renderExportButton(GuiGraphics ctx, int mouseX, int mouseY) {
         int x = getScreenWidth() - 118;
         int y = 3;
         int w = 110;
         int h = 14;
         boolean hovered = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
         drawTopChip(ctx, x, y, w, h, hovered);
-        ctx.text(font, "Export Session", x + 10, y + 3, hovered ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, "Export Session", x + 10, y + 3, hovered ? TEXT_PRIMARY : TEXT_DIM, false);
     }
 
-    private void renderGlobalSearchBox(GuiGraphicsExtractor ctx, int mouseX, int mouseY, int screenWidth) {
+    private void renderGlobalSearchBox(GuiGraphics ctx, int mouseX, int mouseY, int screenWidth) {
         int width = 176;
         int height = 14;
         int x = screenWidth - 438;
         int y = 3;
         renderSearchBox(ctx, x, y, width, height, "Search all tabs", globalSearch, globalSearchFocused);
         if (!globalSearch.isBlank()) {
-            ctx.text(font, font.plainSubstrByWidth("All tabs", 48), x + width + 6, y + 3, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth("All tabs", 48), x + width + 6, y + 3, TEXT_DIM, false);
         }
         addTooltip(x, y, width, height, "Universal search travels across tabs. It combines with local tab filters instead of replacing them.");
     }
 
-    private void renderTasks(GuiGraphicsExtractor ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
+    private void renderTasks(GuiGraphics ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
         TasksTabRenderer.render(this, ctx, x, y, w, h, mouseX, mouseY);
     }
 
-    private void renderGpu(GuiGraphicsExtractor ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
+    private void renderGpu(GuiGraphics ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
         GpuTabRenderer.render(this, ctx, x, y, w, h, mouseX, mouseY);
     }
 
-    private void renderRender(GuiGraphicsExtractor ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
+    private void renderRender(GuiGraphics ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
         RenderTabRenderer.render(this, ctx, x, y, w, h, mouseX, mouseY);
     }
 
-    private void renderStartup(GuiGraphicsExtractor ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
+    private void renderStartup(GuiGraphics ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
         StartupTabRenderer.render(this, ctx, x, y, w, h, mouseX, mouseY);
     }
 
-    private void renderMemory(GuiGraphicsExtractor ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
+    private void renderMemory(GuiGraphics ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
         MemoryTabRenderer.render(this, ctx, x, y, w, h, mouseX, mouseY);
     }
 
-    void renderCpuDetailPanel(GuiGraphicsExtractor ctx, int x, int y, int width, int height, String modId, CpuSamplingProfiler.Snapshot rawCpuSnapshot, CpuSamplingProfiler.Snapshot effectiveCpuSnapshot, CpuSamplingProfiler.Snapshot displayCpuSnapshot, long redistributedSamples, CpuSamplingProfiler.DetailSnapshot detail, ModTimingSnapshot invokeSnapshot, long totalCpuMetric, boolean effectiveView) {
+    void renderCpuDetailPanel(GuiGraphics ctx, int x, int y, int width, int height, String modId, CpuSamplingProfiler.Snapshot rawCpuSnapshot, CpuSamplingProfiler.Snapshot effectiveCpuSnapshot, CpuSamplingProfiler.Snapshot displayCpuSnapshot, long redistributedSamples, CpuSamplingProfiler.DetailSnapshot detail, ModTimingSnapshot invokeSnapshot, long totalCpuMetric, boolean effectiveView) {
         drawInsetPanel(ctx, x, y, width, height);
         if (modId == null || displayCpuSnapshot == null) {
-            ctx.text(font, "Select a row to inspect sampled CPU causes.", x + 8, y + 8, TEXT_DIM, false);
+            ctx.drawString(font, "Select a row to inspect sampled CPU causes.", x + 8, y + 8, TEXT_DIM, false);
             return;
         }
-        ctx.enableScissor(x, y, x + width, y + height);
+        wueffi.taskmanager.client.util.GuiCompat.enableScissor(ctx, x, y, x + width, y + height);
         drawTopChip(ctx, x + width - 96, y + 6, 88, 16, activeDrilldownTable == TableId.TASKS);
-        ctx.text(font, "Why this row", x + width - 88, y + 10, activeDrilldownTable == TableId.TASKS ? TEXT_PRIMARY : TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth(getDisplayName(modId), width - 112), x + 8, y + 8, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Why this row", x + width - 88, y + 10, activeDrilldownTable == TableId.TASKS ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth(getDisplayName(modId), width - 112), x + 8, y + 8, TEXT_PRIMARY, false);
         long rawSamples = rawCpuSnapshot == null ? 0L : rawCpuSnapshot.totalSamples();
         long effectiveSamples = effectiveCpuSnapshot == null ? rawSamples : effectiveCpuSnapshot.totalSamples();
         double pct = cpuMetricValue(displayCpuSnapshot) * 100.0 / Math.max(1L, totalCpuMetric);
@@ -536,14 +544,14 @@ public class TaskManagerScreen extends Screen {
         ctx.disableScissor();
     }
 
-    void renderThreadDetailPanel(GuiGraphicsExtractor ctx, int x, int y, int width, int height, SystemMetricsProfiler.ThreadDrilldown thread) {
+    void renderThreadDetailPanel(GuiGraphics ctx, int x, int y, int width, int height, SystemMetricsProfiler.ThreadDrilldown thread) {
         drawInsetPanel(ctx, x, y, width, height);
         if (thread == null) {
-            ctx.text(font, "Select a thread to inspect CPU time, allocation rate, and sampled ownership.", x + 8, y + 8, TEXT_DIM, false);
+            ctx.drawString(font, "Select a thread to inspect CPU time, allocation rate, and sampled ownership.", x + 8, y + 8, TEXT_DIM, false);
             return;
         }
-        ctx.enableScissor(x, y, x + width, y + height);
-        ctx.text(font, font.plainSubstrByWidth(cleanProfilerLabel(thread.threadName()), width - 16), x + 8, y + 8, TEXT_PRIMARY, false);
+        wueffi.taskmanager.client.util.GuiCompat.enableScissor(ctx, x, y, x + width, y + height);
+        ctx.drawString(font, font.plainSubstrByWidth(cleanProfilerLabel(thread.threadName()), width - 16), x + 8, y + 8, TEXT_PRIMARY, false);
         int rowY = renderWrappedText(ctx, x + 8, y + 22, width - 16,
                 String.format(Locale.ROOT, "tid %d | %.1f%% CPU | %s alloc | %s | blocked %d ms | waited %d ms",
                         thread.threadId(),
@@ -565,18 +573,18 @@ public class TaskManagerScreen extends Screen {
         ctx.disableScissor();
     }
 
-    void renderGpuDetailPanel(GuiGraphicsExtractor ctx, int x, int y, int width, int height, String modId, long rawGpuNanos, long displayGpuNanos, long rawRenderSamples, long displayRenderSamples, long redistributedGpuNanos, long redistributedRenderSamples, CpuSamplingProfiler.DetailSnapshot detail, long totalRenderSamples, long totalGpuNanos, boolean effectiveView) {
+    void renderGpuDetailPanel(GuiGraphics ctx, int x, int y, int width, int height, String modId, long rawGpuNanos, long displayGpuNanos, long rawRenderSamples, long displayRenderSamples, long redistributedGpuNanos, long redistributedRenderSamples, CpuSamplingProfiler.DetailSnapshot detail, long totalRenderSamples, long totalGpuNanos, boolean effectiveView) {
         drawInsetPanel(ctx, x, y, width, height);
         if (modId == null || (displayGpuNanos <= 0L && displayRenderSamples <= 0L)) {
-            ctx.text(font, "Select a row to inspect estimated GPU work.", x + 8, y + 8, TEXT_DIM, false);
+            ctx.drawString(font, "Select a row to inspect estimated GPU work.", x + 8, y + 8, TEXT_DIM, false);
             return;
         }
         double pct = displayGpuNanos * 100.0 / Math.max(1L, totalGpuNanos);
         double gpuMs = displayGpuNanos / 1_000_000.0;
-        ctx.enableScissor(x, y, x + width, y + height);
+        wueffi.taskmanager.client.util.GuiCompat.enableScissor(ctx, x, y, x + width, y + height);
         drawTopChip(ctx, x + width - 96, y + 6, 88, 16, activeDrilldownTable == TableId.GPU);
-        ctx.text(font, "Why this row", x + width - 88, y + 10, activeDrilldownTable == TableId.GPU ? TEXT_PRIMARY : TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth(getDisplayName(modId), width - 112), x + 8, y + 8, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Why this row", x + width - 88, y + 10, activeDrilldownTable == TableId.GPU ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth(getDisplayName(modId), width - 112), x + 8, y + 8, TEXT_PRIMARY, false);
         int rowY = renderWrappedText(ctx, x + 8, y + 20, width - 16, String.format(Locale.ROOT, "%s view | %.1f%% GPU | %s threads | %.2f ms shown GPU | %s shown render samples", effectiveView ? "Effective" : "Raw", pct, detail == null ? 0 : detail.sampledThreadCount(), gpuMs, formatCount(displayRenderSamples)), TEXT_DIM);
         rowY = renderWrappedText(ctx, x + 8, rowY, width - 16, String.format(Locale.ROOT, "Raw tagged GPU: %.2f ms | Raw render samples: %s", rawGpuNanos / 1_000_000.0, formatCount(rawRenderSamples)), TEXT_DIM);
         rowY = renderWrappedText(ctx, x + 8, rowY, width - 16, "Owner source: " + describeGpuOwnerSource(modId), TEXT_DIM);
@@ -597,15 +605,15 @@ public class TaskManagerScreen extends Screen {
         ctx.disableScissor();
     }
 
-    void renderMemoryDetailPanel(GuiGraphicsExtractor ctx, int x, int y, int width, int height, String modId, long rawBytes, long effectiveBytes, long displayBytes, Map<String, Long> topClasses, long redistributedBytes, long totalAttributedBytes, boolean effectiveView) {
+    void renderMemoryDetailPanel(GuiGraphics ctx, int x, int y, int width, int height, String modId, long rawBytes, long effectiveBytes, long displayBytes, Map<String, Long> topClasses, long redistributedBytes, long totalAttributedBytes, boolean effectiveView) {
         drawInsetPanel(ctx, x, y, width, height);
         if (modId == null) {
-            ctx.text(font, "Select a row to inspect top live classes.", x + 8, y + 8, TEXT_DIM, false);
+            ctx.drawString(font, "Select a row to inspect top live classes.", x + 8, y + 8, TEXT_DIM, false);
             return;
         }
         drawTopChip(ctx, x + width - 96, y + 6, 88, 16, activeDrilldownTable == TableId.MEMORY);
-        ctx.text(font, "Why this row", x + width - 88, y + 10, activeDrilldownTable == TableId.MEMORY ? TEXT_PRIMARY : TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth(getDisplayName(modId), width - 112), x + 8, y + 8, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Why this row", x + width - 88, y + 10, activeDrilldownTable == TableId.MEMORY ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth(getDisplayName(modId), width - 112), x + 8, y + 8, TEXT_PRIMARY, false);
         int rowY = y + 20;
         double pct = displayBytes * 100.0 / Math.max(1L, totalAttributedBytes);
         rowY = renderWrappedText(ctx, x + 8, rowY, width - 16, String.format(Locale.ROOT, "%s view | %.1f%% heap | %.1f MB shown", effectiveView ? "Effective" : "Raw", pct, displayBytes / (1024.0 * 1024.0)), TEXT_DIM);
@@ -613,18 +621,18 @@ public class TaskManagerScreen extends Screen {
         if (redistributedBytes > 0) {
             rowY = renderWrappedText(ctx, x + 8, rowY, width - 16, "Redistributed shared/runtime memory: " + String.format(Locale.ROOT, "%.1f MB", redistributedBytes / (1024.0 * 1024.0)), TEXT_DIM);
         }
-        ctx.text(font, effectiveView ? "Attribution: live class ownership with shared/runtime buckets proportionally folded into concrete mods [measured/inferred]" : "Attribution: live class ownership without redistribution. Shared/runtime rows remain separate [measured/inferred]", x + 8, rowY, TEXT_DIM, false);
+        ctx.drawString(font, effectiveView ? "Attribution: live class ownership with shared/runtime buckets proportionally folded into concrete mods [measured/inferred]" : "Attribution: live class ownership without redistribution. Shared/runtime rows remain separate [measured/inferred]", x + 8, rowY, TEXT_DIM, false);
         renderReasonSection(ctx, x + 8, rowY + 18, width - 16, "Top classes", topClasses);
     }
 
-    private int renderThreadSnapshotSection(GuiGraphicsExtractor ctx, int x, int y, int width, String title, Map<String, ThreadLoadProfiler.ThreadSnapshot> data) {
-        ctx.text(font, title, x, y, TEXT_DIM, false);
+    private int renderThreadSnapshotSection(GuiGraphics ctx, int x, int y, int width, String title, Map<String, ThreadLoadProfiler.ThreadSnapshot> data) {
+        ctx.drawString(font, title, x, y, TEXT_DIM, false);
         int rowY = y + 12;
         List<Map.Entry<String, ThreadLoadProfiler.ThreadSnapshot>> filtered = data == null ? List.of() : data.entrySet().stream()
                 .filter(entry -> matchesGlobalSearch(entry.getKey().toLowerCase(Locale.ROOT)))
                 .toList();
         if (filtered.isEmpty()) {
-            ctx.text(font, globalSearch.isBlank() ? "No thread diagnostics captured in the current window." : "No thread rows match the universal search.", x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, globalSearch.isBlank() ? "No thread diagnostics captured in the current window." : "No thread rows match the universal search.", x + 6, rowY, TEXT_DIM, false);
             return rowY + 12;
         }
         int shown = 0;
@@ -647,8 +655,8 @@ public class TaskManagerScreen extends Screen {
         return rowY;
     }
 
-    private int renderReasonSection(GuiGraphicsExtractor ctx, int x, int y, int width, String title, Map<String, ? extends Number> data) {
-        ctx.text(font, title, x, y, TEXT_DIM, false);
+    private int renderReasonSection(GuiGraphics ctx, int x, int y, int width, String title, Map<String, ? extends Number> data) {
+        ctx.drawString(font, title, x, y, TEXT_DIM, false);
         int rowY = y + 12;
         java.util.List<Map.Entry<String, ? extends Number>> filtered = new ArrayList<>();
         if (data != null) {
@@ -659,15 +667,15 @@ public class TaskManagerScreen extends Screen {
             }
         }
         if (filtered.isEmpty()) {
-            ctx.text(font, globalSearch.isBlank() ? "No detail captured in the current window." : "No detail matches the universal search.", x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, globalSearch.isBlank() ? "No detail captured in the current window." : "No detail matches the universal search.", x + 6, rowY, TEXT_DIM, false);
             return rowY + 12;
         }
         int shown = 0;
         for (Map.Entry<String, ? extends Number> entry : filtered) {
             String label = font.plainSubstrByWidth(entry.getKey(), Math.max(80, width - 50));
-            ctx.text(font, label, x + 6, rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, label, x + 6, rowY, TEXT_PRIMARY, false);
             String value = formatDetailValue(entry.getValue());
-            ctx.text(font, value, x + width - font.width(value), rowY, TEXT_DIM, false);
+            ctx.drawString(font, value, x + width - font.width(value), rowY, TEXT_DIM, false);
             rowY += 12;
             shown++;
             if (shown >= 5) {
@@ -677,14 +685,14 @@ public class TaskManagerScreen extends Screen {
         return rowY;
     }
 
-    int renderStringListSection(GuiGraphicsExtractor ctx, int x, int y, int width, String title, java.util.List<String> lines) {
-        ctx.text(font, title, x, y, TEXT_DIM, false);
+    int renderStringListSection(GuiGraphics ctx, int x, int y, int width, String title, java.util.List<String> lines) {
+        ctx.drawString(font, title, x, y, TEXT_DIM, false);
         int rowY = y + 12;
         java.util.List<String> filtered = lines == null ? List.of() : lines.stream()
                 .filter(line -> matchesGlobalSearch(line.toLowerCase(Locale.ROOT)))
                 .toList();
         if (filtered.isEmpty()) {
-            ctx.text(font, globalSearch.isBlank() ? "No detail captured in the current window." : "No detail matches the universal search.", x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, globalSearch.isBlank() ? "No detail captured in the current window." : "No detail matches the universal search.", x + 6, rowY, TEXT_DIM, false);
             return rowY + 12;
         }
         int shown = 0;
@@ -698,12 +706,12 @@ public class TaskManagerScreen extends Screen {
         return rowY;
     }
 
-    int renderWrappedText(GuiGraphicsExtractor ctx, int x, int y, int width, String text, int color) {
+    int renderWrappedText(GuiGraphics ctx, int x, int y, int width, String text, int color) {
         if (text == null || text.isBlank()) {
             return y;
         }
         int wrappedWidth = Math.max(40, width);
-        ctx.textWithWordWrap(font, Component.literal(text), x, y, wrappedWidth, color, false);
+        ctx.drawWordWrap(font, Component.literal(text), x, y, wrappedWidth, color);
         return y + measureWrappedHeight(wrappedWidth, text);
     }
 
@@ -881,27 +889,27 @@ public class TaskManagerScreen extends Screen {
         return Math.max(1, h - PADDING);
     }
 
-    void beginFullPageScissor(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
-        ctx.enableScissor(x, y, x + w, y + h);
+    void beginFullPageScissor(GuiGraphics ctx, int x, int y, int w, int h) {
+        wueffi.taskmanager.client.util.GuiCompat.enableScissor(ctx, x, y, x + w, y + h);
     }
 
-    private void endFullPageScissor(GuiGraphicsExtractor ctx) {
+    private void endFullPageScissor(GuiGraphics ctx) {
         ctx.disableScissor();
     }
 
-    private void renderNetwork(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+    private void renderNetwork(GuiGraphics ctx, int x, int y, int w, int h) {
         NetworkTabRenderer.render(this, ctx, x, y, w, h);
     }
 
 
-    private void renderDisk(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+    private void renderDisk(GuiGraphics ctx, int x, int y, int w, int h) {
         DiskTabRenderer.render(this, ctx, x, y, w, h);
     }
-    private void renderThreads(GuiGraphicsExtractor ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
+    private void renderThreads(GuiGraphics ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
         ThreadsTabRenderer.render(this, ctx, x, y, w, h, mouseX, mouseY);
     }
 
-    void renderThreadToolbar(GuiGraphicsExtractor ctx, int x, int y) {
+    void renderThreadToolbar(GuiGraphics ctx, int x, int y) {
         renderThreadToolbarChip(ctx, x, y, 70, "CPU", threadSort == ThreadSort.CPU);
         renderThreadToolbarChip(ctx, x + 74, y, 82, "Alloc", threadSort == ThreadSort.ALLOC);
         renderThreadToolbarChip(ctx, x + 160, y, 86, "Blocked", threadSort == ThreadSort.BLOCKED);
@@ -910,33 +918,33 @@ public class TaskManagerScreen extends Screen {
         renderThreadToolbarChip(ctx, x + 418, y, 86, threadFreeze ? "Unfreeze" : "Freeze", threadFreeze);
     }
 
-    private void renderThreadToolbarChip(GuiGraphicsExtractor ctx, int x, int y, int width, String label, boolean active) {
+    private void renderThreadToolbarChip(GuiGraphics ctx, int x, int y, int width, String label, boolean active) {
         drawTopChip(ctx, x, y, width, 16, active);
-        ctx.text(font, label, x + 10, y + 4, active ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, label, x + 10, y + 4, active ? TEXT_PRIMARY : TEXT_DIM, false);
     }
 
-    private void renderSystem(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+    private void renderSystem(GuiGraphics ctx, int x, int y, int w, int h) {
         SystemTabRenderer.render(this, ctx, x, y, w, h);
     }
 
-    private void renderBlockEntities(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+    private void renderBlockEntities(GuiGraphics ctx, int x, int y, int w, int h) {
         int left = x + PADDING;
         int top = getFullPageScrollTop(y);
         beginFullPageScissor(ctx, x, y, w, h);
-        ctx.text(font, "Measured block-entity hotspots, chunk density, and findings focused on ticking/storage pressure.", left, top, TEXT_DIM, false);
+        ctx.drawString(font, "Measured block-entity hotspots, chunk density, and findings focused on ticking/storage pressure.", left, top, TEXT_DIM, false);
         top += 18;
         top = renderBlockEntityHotspotSection(ctx, left, top, w - 24, ProfilerManager.getInstance().getLatestBlockEntityHotspots(), "Top Block Entity Hotspots") + 10;
         java.util.List<ProfilerManager.HotChunkSnapshot> hotChunks = ProfilerManager.getInstance().getLatestHotChunks();
-        ctx.text(font, "Block-entity heavy chunks", left, top, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Block-entity heavy chunks", left, top, TEXT_PRIMARY, false);
         top += 14;
         if (hotChunks.isEmpty()) {
-            ctx.text(font, "No hot chunks sampled yet.", left + 6, top, TEXT_DIM, false);
+            ctx.drawString(font, "No hot chunks sampled yet.", left + 6, top, TEXT_DIM, false);
             top += 12;
         } else {
             int shown = 0;
             for (ProfilerManager.HotChunkSnapshot hotChunk : hotChunks) {
                 String line = String.format(Locale.ROOT, "%d,%d | %d block entities | top %s | score %.1f", hotChunk.chunkX(), hotChunk.chunkZ(), hotChunk.blockEntityCount(), cleanProfilerLabel(hotChunk.topBlockEntityClass()), hotChunk.activityScore());
-                ctx.text(font, font.plainSubstrByWidth(line, w - 24), left + 6, top, hotChunk.blockEntityCount() >= 16 ? ACCENT_YELLOW : TEXT_DIM, false);
+                ctx.drawString(font, font.plainSubstrByWidth(line, w - 24), left + 6, top, hotChunk.blockEntityCount() >= 16 ? ACCENT_YELLOW : TEXT_DIM, false);
                 top += 12;
                 shown++;
                 if (shown >= 6) {
@@ -947,14 +955,14 @@ public class TaskManagerScreen extends Screen {
         top += 8;
         top += renderRuleFindingsSection(ctx, left, top, w - 24, ProfilerManager.getInstance().getLatestRuleFindings()) + 8;
         if (selectedLagChunk != null) {
-            ctx.text(font, "Selected chunk block entities", left, top, TEXT_PRIMARY, false);
+            ctx.drawString(font, "Selected chunk block entities", left, top, TEXT_PRIMARY, false);
             top += 14;
             Minecraft client = Minecraft.getInstance();
             Map<String, Integer> blockEntityCounts = new HashMap<>();
             if (client.level != null) {
-                for (BlockEntity blockEntity : client.level.getGloballyRenderedBlockEntities()) {
-                    ChunkPos chunkPos = ChunkPos.containing(blockEntity.getBlockPos());
-                    if (chunkPos.x() == selectedLagChunk.x() && chunkPos.z() == selectedLagChunk.z()) {
+                for (BlockEntity blockEntity : wueffi.taskmanager.client.util.ClientLevelCompat.blockEntities(client.level)) {
+                    ChunkPos chunkPos = new ChunkPos(blockEntity.getBlockPos());
+                    if (chunkPos.x == selectedLagChunk.x && chunkPos.z == selectedLagChunk.z) {
                         blockEntityCounts.merge(cleanProfilerLabel(blockEntity.getClass().getSimpleName()), 1, Integer::sum);
                     }
                 }
@@ -964,15 +972,15 @@ public class TaskManagerScreen extends Screen {
         ctx.disableScissor();
     }
 
-    private void renderWorldTab(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+    private void renderWorldTab(GuiGraphics ctx, int x, int y, int w, int h) {
         WorldTabRenderer.render(this, ctx, x, y, w, h);
     }
 
-    void renderLagMap(GuiGraphicsExtractor ctx, int x, int y, int width, int height) {
+    void renderLagMap(GuiGraphics ctx, int x, int y, int width, int height) {
         Minecraft client = Minecraft.getInstance();
-        ctx.text(font, "Lag Map", x, y, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Lag Map", x, y, TEXT_PRIMARY, false);
         if (client.player == null || client.level == null) {
-            ctx.text(font, "World not loaded.", x, y + 14, TEXT_DIM, false);
+            ctx.drawString(font, "World not loaded.", x, y + 14, TEXT_DIM, false);
             return;
         }
 
@@ -980,7 +988,7 @@ public class TaskManagerScreen extends Screen {
         Map<Long, Integer> counts = new LinkedHashMap<>();
         for (Entity entity : client.level.entitiesForRendering()) {
             ChunkPos chunkPos = entity.chunkPosition();
-            long key = (((long) chunkPos.x()) << 32) ^ (chunkPos.z() & 0xFFFFFFFFL);
+            long key = (((long) chunkPos.x) << 32) ^ (chunkPos.z & 0xFFFFFFFFL);
             counts.merge(key, 1, Integer::sum);
         }
 
@@ -992,8 +1000,8 @@ public class TaskManagerScreen extends Screen {
 
         for (int dz = -radius; dz <= radius; dz++) {
             for (int dx = -radius; dx <= radius; dx++) {
-                int chunkX = playerChunk.x() + dx;
-                int chunkZ = playerChunk.z() + dz;
+                int chunkX = playerChunk.x + dx;
+                int chunkZ = playerChunk.z + dz;
                 long key = (((long) chunkX) << 32) ^ (chunkZ & 0xFFFFFFFFL);
                 int count = counts.getOrDefault(key, 0);
                 double intensity = count / (double) maxCount;
@@ -1006,7 +1014,7 @@ public class TaskManagerScreen extends Screen {
                 if (dx == 0 && dz == 0) {
                     ctx.fill(px + 3, py + 3, px + cell - 4, py + cell - 4, 0x99FFFFFF);
                 }
-                if (selectedLagChunk != null && selectedLagChunk.x() == chunkX && selectedLagChunk.z() == chunkZ) {
+                if (selectedLagChunk != null && selectedLagChunk.x == chunkX && selectedLagChunk.z == chunkZ) {
                     ctx.fill(px, py, px + cell - 1, py + 1, 0xFFFFFFFF);
                     ctx.fill(px, py + cell - 2, px + cell - 1, py + cell - 1, 0xFFFFFFFF);
                     ctx.fill(px, py, px + 1, py + cell - 1, 0xFFFFFFFF);
@@ -1018,10 +1026,10 @@ public class TaskManagerScreen extends Screen {
         String legend = serverTickMs > 40.0
                 ? "High server tick: dense chunks highlighted red"
                 : "Server tick stable: map shows relative entity density";
-        ctx.text(font, legend, x, mapTop + (cell * ((radius * 2) + 1)) + 4, TEXT_DIM, false);
+        ctx.drawString(font, legend, x, mapTop + (cell * ((radius * 2) + 1)) + 4, TEXT_DIM, false);
     }
 
-    void renderSensorsPanel(GuiGraphicsExtractor ctx, int x, int y, int width, SystemMetricsProfiler.Snapshot system) {
+    void renderSensorsPanel(GuiGraphics ctx, int x, int y, int width, SystemMetricsProfiler.Snapshot system) {
         ctx.fill(x, y, x + width, y + 134, 0x14000000);
         String source = blankToUnknown(system.sensorSource());
         String[] sourceParts = source.split("\\| Tried: ", 2);
@@ -1030,19 +1038,19 @@ public class TaskManagerScreen extends Screen {
         String status = blankToUnknown(system.cpuSensorStatus());
         String availability = system.cpuTemperatureC() >= 0 || system.gpuTemperatureC() >= 0 ? "Measured temperatures available" : "Falling back to load-only telemetry";
         ctx.fill(x, y, x + width, y + 16, 0x22000000);
-        ctx.text(font, "Sensors & Telemetry Health", x + 6, y + 4, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Sensors & Telemetry Health", x + 6, y + 4, TEXT_PRIMARY, false);
         addTooltip(x + 6, y + 2, 146, 14, "Sensor diagnostics shows provider availability, helper health, fallback path, and the last bridge error.");
         String statusLabel = font.plainSubstrByWidth(status, width - 12);
-        ctx.text(font, statusLabel, x + width - 6 - font.width(statusLabel), y + 4, TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth("Provider: " + activeSource, width - 12), x + 6, y + 22, TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth("Availability: " + availability, width - 12), x + 6, y + 36, system.cpuTemperatureC() >= 0 || system.gpuTemperatureC() >= 0 ? ACCENT_GREEN : ACCENT_YELLOW, false);
+        ctx.drawString(font, statusLabel, x + width - 6 - font.width(statusLabel), y + 4, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth("Provider: " + activeSource, width - 12), x + 6, y + 22, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth("Availability: " + availability, width - 12), x + 6, y + 36, system.cpuTemperatureC() >= 0 || system.gpuTemperatureC() >= 0 ? ACCENT_GREEN : ACCENT_YELLOW, false);
         String tempSummary = "CPU temp " + formatTemperature(system.cpuTemperatureC()) + " | GPU " + TelemetryTextFormatter.formatGpuTemperatureCompact(system) + " | CPU load " + formatPercent(system.cpuCoreLoadPercent()) + " | GPU load " + formatPercent(system.gpuCoreLoadPercent());
-        ctx.text(font, font.plainSubstrByWidth(tempSummary, width - 12), x + 6, y + 50, TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth("GPU core temp provider: " + blankToUnknown(system.gpuTemperatureProvider()) + " | GPU hot spot provider: " + blankToUnknown(system.gpuHotSpotProvider()), width - 12), x + 6, y + 64, TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth("Windows helper: " + blankToUnknown(system.telemetryHelperStatus()) + " | Last sample age: " + formatDuration(system.telemetrySampleAgeMillis()), width - 12), x + 6, y + 78, TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth("Counter source: " + blankToUnknown(system.counterSource()) + " | helper cost " + system.telemetryHelperCostMillis() + " ms", width - 12), x + 6, y + 92, TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth("Attempts: " + attempts, width - 12), x + 6, y + 106, TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth("Reason / error: " + blankToUnknown(system.cpuTemperatureUnavailableReason()) + " | " + blankToUnknown(system.sensorErrorCode()), width - 12), x + 6, y + 120, ACCENT_YELLOW, false);
+        ctx.drawString(font, font.plainSubstrByWidth(tempSummary, width - 12), x + 6, y + 50, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth("GPU core temp provider: " + blankToUnknown(system.gpuTemperatureProvider()) + " | GPU hot spot provider: " + blankToUnknown(system.gpuHotSpotProvider()), width - 12), x + 6, y + 64, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth("Windows helper: " + blankToUnknown(system.telemetryHelperStatus()) + " | Last sample age: " + formatDuration(system.telemetrySampleAgeMillis()), width - 12), x + 6, y + 78, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth("Counter source: " + blankToUnknown(system.counterSource()) + " | helper cost " + system.telemetryHelperCostMillis() + " ms", width - 12), x + 6, y + 92, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth("Attempts: " + attempts, width - 12), x + 6, y + 106, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth("Reason / error: " + blankToUnknown(system.cpuTemperatureUnavailableReason()) + " | " + blankToUnknown(system.sensorErrorCode()), width - 12), x + 6, y + 120, ACCENT_YELLOW, false);
     }
 
     String summarizeResourcePackAndTextureState(SystemMetricsProfiler.Snapshot system) {
@@ -1065,18 +1073,18 @@ public class TaskManagerScreen extends Screen {
                 .orElse("warming up");
     }
 
-    void renderProfilerSelfCostPanel(GuiGraphicsExtractor ctx, int x, int y, int width, SystemMetricsProfiler.Snapshot system) {
+    void renderProfilerSelfCostPanel(GuiGraphics ctx, int x, int y, int width, SystemMetricsProfiler.Snapshot system) {
         ctx.fill(x, y, x + width, y + 76, 0x14000000);
         ctx.fill(x, y, x + width, y + 16, 0x22000000);
-        ctx.text(font, "Profiler Self-Cost", x + 6, y + 4, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Profiler Self-Cost", x + 6, y + 4, TEXT_PRIMARY, false);
         addTooltip(x + 6, y + 2, 90, 14, "Shows TaskManager's own visible overhead so the profiler stays accountable.");
-        ctx.text(font, font.plainSubstrByWidth(String.format(Locale.ROOT, "Profiler CPU %.1f%% | governor %s | world scan %d ms", system.profilerCpuLoadPercent(), blankToUnknown(system.collectorGovernorMode()), system.worldScanCostMillis()), width - 12), x + 6, y + 22, TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth(String.format(Locale.ROOT, "Memory histogram %d ms | telemetry helper %d ms", system.memoryHistogramCostMillis(), system.telemetryHelperCostMillis()), width - 12), x + 6, y + 36, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth(String.format(Locale.ROOT, "Profiler CPU %.1f%% | governor %s | world scan %d ms", system.profilerCpuLoadPercent(), blankToUnknown(system.collectorGovernorMode()), system.worldScanCostMillis()), width - 12), x + 6, y + 22, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth(String.format(Locale.ROOT, "Memory histogram %d ms | telemetry helper %d ms", system.memoryHistogramCostMillis(), system.telemetryHelperCostMillis()), width - 12), x + 6, y + 36, TEXT_DIM, false);
         String protectionLine = "self-protect".equals(system.collectorGovernorMode())
                 ? "Self-protection is active: expensive collectors are backing off to keep TaskManager from adding more lag."
                 : "Adaptive mode slows expensive collectors during stable periods and bursts into higher detail for alerts, recording, or active inspection.";
-        ctx.text(font, font.plainSubstrByWidth(protectionLine, width - 12), x + 6, y + 50, "self-protect".equals(system.collectorGovernorMode()) ? ACCENT_YELLOW : TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth("GPU coverage: " + blankToUnknown(system.gpuCoverageSummary()), width - 12), x + 6, y + 62, ACCENT_YELLOW, false);
+        ctx.drawString(font, font.plainSubstrByWidth(protectionLine, width - 12), x + 6, y + 50, "self-protect".equals(system.collectorGovernorMode()) ? ACCENT_YELLOW : TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth("GPU coverage: " + blankToUnknown(system.gpuCoverageSummary()), width - 12), x + 6, y + 62, ACCENT_YELLOW, false);
     }
 
     List<String> buildThreadDrilldownLines(SystemMetricsProfiler.Snapshot system) {
@@ -1179,21 +1187,21 @@ public class TaskManagerScreen extends Screen {
     }
 
 
-    int renderPacketBreakdownColumn(GuiGraphicsExtractor ctx, int x, int y, int width, Map<String, Long> breakdown) {
+    int renderPacketBreakdownColumn(GuiGraphics ctx, int x, int y, int width, Map<String, Long> breakdown) {
         List<Map.Entry<String, Long>> filtered = breakdown.entrySet().stream()
                 .filter(entry -> matchesGlobalSearch(entry.getKey().toLowerCase(Locale.ROOT)))
                 .toList();
         if (filtered.isEmpty()) {
-            ctx.text(font, globalSearch.isBlank() ? "No packet attribution yet." : "No packet rows match the universal search.", x, y, TEXT_DIM, false);
+            ctx.drawString(font, globalSearch.isBlank() ? "No packet attribution yet." : "No packet rows match the universal search.", x, y, TEXT_DIM, false);
             return 12;
         }
         int rowY = y;
         int shown = 0;
         for (Map.Entry<String, Long> entry : filtered) {
             String label = font.plainSubstrByWidth(entry.getKey(), Math.max(60, width - 46));
-            ctx.text(font, label, x, rowY, TEXT_DIM, false);
+            ctx.drawString(font, label, x, rowY, TEXT_DIM, false);
             String value = String.valueOf(entry.getValue());
-            ctx.text(font, value, x + width - font.width(value), rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, value, x + width - font.width(value), rowY, TEXT_PRIMARY, false);
             rowY += 12;
             shown++;
             if (shown >= 6) {
@@ -1204,25 +1212,25 @@ public class TaskManagerScreen extends Screen {
     }
 
 
-    int renderLagChunkDetail(GuiGraphicsExtractor ctx, int x, int y, int width, int height) {
+    int renderLagChunkDetail(GuiGraphics ctx, int x, int y, int width, int height) {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null || selectedLagChunk == null) {
-            ctx.text(font, "Click a chunk in the world map to inspect its entities and block entities.", x, y, TEXT_DIM, false);
+            ctx.drawString(font, "Click a chunk in the world map to inspect its entities and block entities.", x, y, TEXT_DIM, false);
             return y + 12;
         }
-        ctx.text(font, "Selected chunk " + selectedLagChunk.x() + ", " + selectedLagChunk.z(), x, y, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Selected chunk " + selectedLagChunk.x + ", " + selectedLagChunk.z, x, y, TEXT_PRIMARY, false);
         int rowY = y + 14;
         Map<String, Integer> entityCounts = new HashMap<>();
         for (Entity entity : client.level.entitiesForRendering()) {
             ChunkPos chunkPos = entity.chunkPosition();
-            if (chunkPos.x() == selectedLagChunk.x() && chunkPos.z() == selectedLagChunk.z()) {
+            if (chunkPos.x == selectedLagChunk.x && chunkPos.z == selectedLagChunk.z) {
                 entityCounts.merge(cleanEntityName(entity), 1, Integer::sum);
             }
         }
         Map<String, Integer> blockEntityCounts = new HashMap<>();
-        for (BlockEntity blockEntity : client.level.getGloballyRenderedBlockEntities()) {
-            ChunkPos chunkPos = ChunkPos.containing(blockEntity.getBlockPos());
-            if (chunkPos.x() == selectedLagChunk.x() && chunkPos.z() == selectedLagChunk.z()) {
+        for (BlockEntity blockEntity : wueffi.taskmanager.client.util.ClientLevelCompat.blockEntities(client.level)) {
+            ChunkPos chunkPos = new ChunkPos(blockEntity.getBlockPos());
+            if (chunkPos.x == selectedLagChunk.x && chunkPos.z == selectedLagChunk.z) {
                 blockEntityCounts.merge(cleanProfilerLabel(blockEntity.getClass().getSimpleName()), 1, Integer::sum);
             }
         }
@@ -1247,28 +1255,28 @@ public class TaskManagerScreen extends Screen {
     }
 
 
-    int renderCountMap(GuiGraphicsExtractor ctx, int x, int y, int width, String title, Map<String, Integer> counts) {
+    int renderCountMap(GuiGraphics ctx, int x, int y, int width, String title, Map<String, Integer> counts) {
         return renderCountMap(ctx, x, y, width, title, counts, true);
     }
 
-    int renderCountMap(GuiGraphicsExtractor ctx, int x, int y, int width, String title, Map<String, Integer> counts, boolean normalizeLabels) {
-        ctx.text(font, title, x, y, TEXT_DIM, false);
+    int renderCountMap(GuiGraphics ctx, int x, int y, int width, String title, Map<String, Integer> counts, boolean normalizeLabels) {
+        ctx.drawString(font, title, x, y, TEXT_DIM, false);
         int rowY = y + 12;
         List<Map.Entry<String, Integer>> filtered = counts.entrySet().stream()
                 .filter(entry -> matchesGlobalSearch((normalizeLabels ? cleanProfilerLabel(entry.getKey()) : entry.getKey()).toLowerCase(Locale.ROOT)))
                 .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
                 .toList();
         if (filtered.isEmpty()) {
-            ctx.text(font, globalSearch.isBlank() ? "none" : "no matches", x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, globalSearch.isBlank() ? "none" : "no matches", x + 6, rowY, TEXT_DIM, false);
             return rowY + 12;
         }
         int shown = 0;
         for (Map.Entry<String, Integer> entry : filtered) {
             String rawLabel = normalizeLabels ? cleanProfilerLabel(entry.getKey()) : entry.getKey();
             String label = font.plainSubstrByWidth(rawLabel, Math.max(60, width - 36));
-            ctx.text(font, label, x + 6, rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, label, x + 6, rowY, TEXT_PRIMARY, false);
             String value = String.valueOf(entry.getValue());
-            ctx.text(font, value, x + width - font.width(value), rowY, TEXT_DIM, false);
+            ctx.drawString(font, value, x + width - font.width(value), rowY, TEXT_DIM, false);
             rowY += 12;
             shown++;
             if (shown >= 5) {
@@ -1279,8 +1287,8 @@ public class TaskManagerScreen extends Screen {
     }
 
 
-    int renderRuleFindingsSection(GuiGraphicsExtractor ctx, int x, int y, int width, java.util.List<ProfilerManager.RuleFinding> findings) {
-        ctx.text(font, "Conflict and slowdown findings", x, y, TEXT_PRIMARY, false);
+    int renderRuleFindingsSection(GuiGraphics ctx, int x, int y, int width, java.util.List<ProfilerManager.RuleFinding> findings) {
+        ctx.drawString(font, "Conflict and slowdown findings", x, y, TEXT_PRIMARY, false);
         int rowY = y + 14;
         List<ProfilerManager.RuleFinding> filteredFindings = findings == null ? List.of() : findings.stream()
                 .filter(finding -> matchesGlobalSearch((finding.category() + " " + finding.message() + " " + finding.details() + " " + finding.metricSummary()).toLowerCase(Locale.ROOT)))
@@ -1293,7 +1301,7 @@ public class TaskManagerScreen extends Screen {
                 })
                 .toList();
         if (filteredFindings.isEmpty()) {
-            ctx.text(font, globalSearch.isBlank() ? "No active findings in the current window." : "No findings match the universal search.", x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, globalSearch.isBlank() ? "No active findings in the current window." : "No findings match the universal search.", x + 6, rowY, TEXT_DIM, false);
             return 24;
         }
         if (selectedFindingKey == null || filteredFindings.stream().noneMatch(finding -> findingKey(finding).equals(selectedFindingKey))) {
@@ -1306,7 +1314,7 @@ public class TaskManagerScreen extends Screen {
         for (ProfilerManager.RuleFinding finding : filteredFindings) {
             String section = findingSectionTitle(finding);
             if (!section.equals(currentSection)) {
-                ctx.text(font, section, x + 6, rowY, ACCENT_YELLOW, false);
+                ctx.drawString(font, section, x + 6, rowY, ACCENT_YELLOW, false);
                 rowY += 12;
                 currentSection = section;
             }
@@ -1323,9 +1331,9 @@ public class TaskManagerScreen extends Screen {
             }
             findingClickTargets.add(new FindingClickTarget(x + 2, rowY - 2, listWidth - 2, itemHeight, findingKey(finding)));
             String heading = findingListLabel(finding) + " | " + finding.severity().toUpperCase(Locale.ROOT) + " | " + finding.confidence();
-            ctx.text(font, font.plainSubstrByWidth(heading, listWidth - 12), x + 6, rowY, color, false);
+            ctx.drawString(font, font.plainSubstrByWidth(heading, listWidth - 12), x + 6, rowY, color, false);
             rowY += 12;
-            ctx.text(font, font.plainSubstrByWidth(finding.message(), listWidth - 18), x + 12, rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, font.plainSubstrByWidth(finding.message(), listWidth - 18), x + 12, rowY, TEXT_PRIMARY, false);
             rowY += 14;
             shown++;
             if (shown >= 8) {
@@ -1344,7 +1352,7 @@ public class TaskManagerScreen extends Screen {
                 + 18;
         int detailHeight = Math.max(92, detailTextHeight + 18);
         drawInsetPanel(ctx, detailX, detailBoxY, detailW, stacked ? detailHeight : Math.max(detailHeight, rowY - y + 18));
-        ctx.text(font, "Finding drilldown", detailX + 8, detailBoxY + 8, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Finding drilldown", detailX + 8, detailBoxY + 8, TEXT_PRIMARY, false);
         int detailY = renderWrappedText(ctx, detailX + 8, detailInnerY, detailW - 16, selected.message(), TEXT_PRIMARY);
         detailY = renderWrappedText(ctx, detailX + 8, detailY + 2, detailW - 16, "Why: " + selected.details(), TEXT_DIM);
         detailY = renderWrappedText(ctx, detailX + 8, detailY + 2, detailW - 16, "Metrics: " + selected.metricSummary(), TEXT_DIM);
@@ -1393,54 +1401,54 @@ public class TaskManagerScreen extends Screen {
         };
     }
 
-    private void renderThreadWaitSection(GuiGraphicsExtractor ctx, int x, int y, int width, Map<String, ThreadLoadProfiler.ThreadSnapshot> details) {
-        ctx.text(font, "Blocked / waiting analysis", x, y, TEXT_PRIMARY, false);
+    private void renderThreadWaitSection(GuiGraphics ctx, int x, int y, int width, Map<String, ThreadLoadProfiler.ThreadSnapshot> details) {
+        ctx.drawString(font, "Blocked / waiting analysis", x, y, TEXT_PRIMARY, false);
         int rowY = y + 14;
         java.util.List<Map.Entry<String, ThreadLoadProfiler.ThreadSnapshot>> interesting = details.entrySet().stream()
                 .filter(entry -> entry.getValue().blockedCountDelta() > 0 || entry.getValue().waitedCountDelta() > 0 || "BLOCKED".equals(entry.getValue().state()) || "WAITING".equals(entry.getValue().state()))
                 .limit(5)
                 .toList();
         if (interesting.isEmpty()) {
-            ctx.text(font, "No blocked or waiting thread anomalies in the current window.", x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, "No blocked or waiting thread anomalies in the current window.", x + 6, rowY, TEXT_DIM, false);
             return;
         }
         for (Map.Entry<String, ThreadLoadProfiler.ThreadSnapshot> entry : interesting) {
             ThreadLoadProfiler.ThreadSnapshot detail = entry.getValue();
             String summary = entry.getKey() + " | " + detail.state() + " | blocked " + detail.blockedCountDelta() + " | waited " + detail.waitedCountDelta();
-            ctx.text(font, font.plainSubstrByWidth(summary, width), x + 6, rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, font.plainSubstrByWidth(summary, width), x + 6, rowY, TEXT_PRIMARY, false);
             rowY += 12;
             if (detail.lockName() != null && !detail.lockName().isBlank()) {
-                ctx.text(font, font.plainSubstrByWidth("Lock: " + detail.lockName(), width - 6), x + 12, rowY, TEXT_DIM, false);
+                ctx.drawString(font, font.plainSubstrByWidth("Lock: " + detail.lockName(), width - 6), x + 12, rowY, TEXT_DIM, false);
                 rowY += 12;
             }
         }
     }
 
-    int renderPacketSpikeBookmarks(GuiGraphicsExtractor ctx, int x, int y, int width, java.util.List<NetworkPacketProfiler.SpikeSnapshot> spikes) {
+    int renderPacketSpikeBookmarks(GuiGraphics ctx, int x, int y, int width, java.util.List<NetworkPacketProfiler.SpikeSnapshot> spikes) {
         List<NetworkPacketProfiler.SpikeSnapshot> filtered = spikes == null ? List.of() : spikes.stream()
                 .filter(spike -> matchesGlobalSearch((formatPacketSummary(spike.inboundByCategory()) + " " + formatPacketSummary(spike.inboundByType()) + " " + formatPacketSummary(spike.outboundByCategory()) + " " + formatPacketSummary(spike.outboundByType())).toLowerCase(Locale.ROOT)))
                 .toList();
         if (filtered.isEmpty()) {
-            ctx.text(font, globalSearch.isBlank() ? "No packet spike bookmarks yet." : "No packet spikes match the universal search.", x + 6, y, TEXT_DIM, false);
+            ctx.drawString(font, globalSearch.isBlank() ? "No packet spike bookmarks yet." : "No packet spikes match the universal search.", x + 6, y, TEXT_DIM, false);
             return 14;
         }
         int rowY = y;
         int shown = 0;
         for (NetworkPacketProfiler.SpikeSnapshot spike : filtered) {
             String header = "Spike @ " + formatDuration(Math.max(0L, System.currentTimeMillis() - spike.capturedAtEpochMillis())) + " ago";
-            ctx.text(font, header, x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, header, x + 6, rowY, TEXT_DIM, false);
             rowY += 12;
             String inbound = "In categories: " + formatPacketSummary(spike.inboundByCategory());
-            ctx.text(font, font.plainSubstrByWidth(inbound, width - 12), x + 12, rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, font.plainSubstrByWidth(inbound, width - 12), x + 12, rowY, TEXT_PRIMARY, false);
             rowY += 12;
             String inboundTypes = "In types: " + formatPacketSummary(spike.inboundByType());
-            ctx.text(font, font.plainSubstrByWidth(inboundTypes, width - 12), x + 12, rowY, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth(inboundTypes, width - 12), x + 12, rowY, TEXT_DIM, false);
             rowY += 12;
             String outbound = "Out categories: " + formatPacketSummary(spike.outboundByCategory());
-            ctx.text(font, font.plainSubstrByWidth(outbound, width - 12), x + 12, rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, font.plainSubstrByWidth(outbound, width - 12), x + 12, rowY, TEXT_PRIMARY, false);
             rowY += 12;
             String outboundTypes = "Out types: " + formatPacketSummary(spike.outboundByType());
-            ctx.text(font, font.plainSubstrByWidth(outboundTypes, width - 12), x + 12, rowY, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth(outboundTypes, width - 12), x + 12, rowY, TEXT_DIM, false);
             rowY += 14;
             shown++;
             if (shown >= 4) {
@@ -1450,40 +1458,40 @@ public class TaskManagerScreen extends Screen {
         return rowY - y;
     }
 
-    void renderSpikeInspector(GuiGraphicsExtractor ctx, int x, int y, int width) {
-        ctx.text(font, "Spike inspector", x, y, TEXT_PRIMARY, false);
+    void renderSpikeInspector(GuiGraphics ctx, int x, int y, int width) {
+        ctx.drawString(font, "Spike inspector", x, y, TEXT_PRIMARY, false);
         int rowY = y + 14;
         List<ProfilerManager.SpikeCapture> filteredSpikes = snapshot.spikes().stream()
                 .filter(spike -> matchesGlobalSearch((spike.likelyBottleneck() + " " + String.join(" ", spike.topCpuMods()) + " " + String.join(" ", spike.topRenderPhases()) + " " + String.join(" ", spike.topThreads())).toLowerCase(Locale.ROOT)))
                 .toList();
         if (filteredSpikes.isEmpty()) {
-            ctx.text(font, globalSearch.isBlank() ? "No spike bookmarks yet. Capture a hitch to inspect it here." : "No spike bookmarks match the universal search.", x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, globalSearch.isBlank() ? "No spike bookmarks yet. Capture a hitch to inspect it here." : "No spike bookmarks match the universal search.", x + 6, rowY, TEXT_DIM, false);
             return;
         }
         ProfilerManager.SpikeCapture pinned = ProfilerManager.getInstance().getPinnedSpike();
         if (pinned != null) {
-            ctx.text(font, font.plainSubstrByWidth(String.format(Locale.ROOT, "Pinned baseline %.1f ms | stutter %.1f | %s", pinned.frameDurationMs(), pinned.stutterScore(), pinned.likelyBottleneck()), width - 88), x + 6, rowY, ACCENT_GREEN, false);
+            ctx.drawString(font, font.plainSubstrByWidth(String.format(Locale.ROOT, "Pinned baseline %.1f ms | stutter %.1f | %s", pinned.frameDurationMs(), pinned.stutterScore(), pinned.likelyBottleneck()), width - 88), x + 6, rowY, ACCENT_GREEN, false);
             renderSpikePinButton(ctx, x + width - 78, rowY - 2, 72, 14, "Clear Pin", null, true);
             rowY += 16;
         }
         int shown = 0;
         for (ProfilerManager.SpikeCapture spike : filteredSpikes) {
             String summary = String.format(Locale.ROOT, "%.1f ms | stutter %.1f | %s", spike.frameDurationMs(), spike.stutterScore(), spike.likelyBottleneck());
-            ctx.text(font, font.plainSubstrByWidth(summary, width - 84), x + 6, rowY, shown == 0 ? ACCENT_YELLOW : TEXT_PRIMARY, false);
+            ctx.drawString(font, font.plainSubstrByWidth(summary, width - 84), x + 6, rowY, shown == 0 ? ACCENT_YELLOW : TEXT_PRIMARY, false);
             renderSpikePinButton(ctx, x + width - 70, rowY - 2, 64, 14, spike.equals(pinned) ? "Pinned" : "Pin", spike, false);
             rowY += 12;
             ProfilerManager.SpikeDelta delta = ProfilerManager.getInstance().compareSpikeToPinned(spike);
             if (delta != null) {
                 int deltaColor = delta.frameDurationDeltaMs() <= 0.0 ? ACCENT_GREEN : ACCENT_RED;
                 String deltaText = String.format(Locale.ROOT, "%+.1f ms vs pinned | stutter %+.1f | %s", delta.frameDurationDeltaMs(), delta.stutterScoreDelta(), delta.bottleneckChange());
-                ctx.text(font, font.plainSubstrByWidth(deltaText, width - 12), x + 12, rowY, deltaColor, false);
+                ctx.drawString(font, font.plainSubstrByWidth(deltaText, width - 12), x + 12, rowY, deltaColor, false);
                 rowY += 12;
             }
-            ctx.text(font, font.plainSubstrByWidth("Top CPU: " + String.join(" | ", spike.topCpuMods()), width - 12), x + 12, rowY, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth("Top CPU: " + String.join(" | ", spike.topCpuMods()), width - 12), x + 12, rowY, TEXT_DIM, false);
             rowY += 12;
-            ctx.text(font, font.plainSubstrByWidth("Top render: " + String.join(" | ", spike.topRenderPhases()), width - 12), x + 12, rowY, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth("Top render: " + String.join(" | ", spike.topRenderPhases()), width - 12), x + 12, rowY, TEXT_DIM, false);
             rowY += 12;
-            ctx.text(font, font.plainSubstrByWidth("Threads: " + String.join(" | ", spike.topThreads()), width - 12), x + 12, rowY, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth("Threads: " + String.join(" | ", spike.topThreads()), width - 12), x + 12, rowY, TEXT_DIM, false);
             rowY += 14;
             if (shown == 0) {
                 rowY += renderRuleFindingsSection(ctx, x + 6, rowY, width - 6, spike.findings()) + 6;
@@ -1495,18 +1503,18 @@ public class TaskManagerScreen extends Screen {
         }
     }
 
-    private void renderSpikePinButton(GuiGraphicsExtractor ctx, int x, int y, int width, int height, String label, ProfilerManager.SpikeCapture spike, boolean clearPin) {
+    private void renderSpikePinButton(GuiGraphics ctx, int x, int y, int width, int height, String label, ProfilerManager.SpikeCapture spike, boolean clearPin) {
         drawTopChip(ctx, x, y, width, height, true);
-        ctx.text(font, label, x + 8, y + 4, TEXT_PRIMARY, false);
+        ctx.drawString(font, label, x + 8, y + 4, TEXT_PRIMARY, false);
         spikePinClickTargets.add(new SpikePinClickTarget(x, y, width, height, spike, clearPin));
     }
 
-    private int renderSimpleHistoryGraph(GuiGraphicsExtractor ctx, int x, int y, int width, int height, java.util.List<Integer> history, String title, String units) {
+    private int renderSimpleHistoryGraph(GuiGraphics ctx, int x, int y, int width, int height, java.util.List<Integer> history, String title, String units) {
         return renderSimpleHistoryGraph(ctx, x, y, width, height, history, title, units, -1);
     }
 
-    private int renderSimpleHistoryGraph(GuiGraphicsExtractor ctx, int x, int y, int width, int height, java.util.List<Integer> history, String title, String units, int explicitMax) {
-        ctx.text(font, title + " (" + units + ")", x, y, TEXT_DIM, false);
+    private int renderSimpleHistoryGraph(GuiGraphics ctx, int x, int y, int width, int height, java.util.List<Integer> history, String title, String units, int explicitMax) {
+        ctx.drawString(font, title + " (" + units + ")", x, y, TEXT_DIM, false);
         int axisLabelWidth = 34;
         int gx = x;
         int gy = y + 14;
@@ -1515,15 +1523,15 @@ public class TaskManagerScreen extends Screen {
         int graphHeight = Math.max(36, height - 18);
         ctx.fill(gx - 2, gy - 2, gx + graphWidth + 2, gy + graphHeight + 2, 0x66000000);
         if (history == null || history.isEmpty()) {
-            ctx.text(font, "No activity history yet.", gx + 8, gy + graphHeight / 2 - 4, TEXT_DIM, false);
+            ctx.drawString(font, "No activity history yet.", gx + 8, gy + graphHeight / 2 - 4, TEXT_DIM, false);
             return height;
         }
         int max = explicitMax > 0 ? explicitMax : history.stream().mapToInt(Integer::intValue).max().orElse(1);
         String topLabel = String.valueOf(max);
         String midLabel = String.valueOf(Math.max(0, max / 2));
-        ctx.text(font, topLabel, axisX, gy - 4, TEXT_DIM, false);
-        ctx.text(font, midLabel, axisX, gy + graphHeight / 2 - 4, TEXT_DIM, false);
-        ctx.text(font, "0", axisX, gy + graphHeight - 8, TEXT_DIM, false);
+        ctx.drawString(font, topLabel, axisX, gy - 4, TEXT_DIM, false);
+        ctx.drawString(font, midLabel, axisX, gy + graphHeight / 2 - 4, TEXT_DIM, false);
+        ctx.drawString(font, "0", axisX, gy + graphHeight - 8, TEXT_DIM, false);
         for (int px = 0; px < graphWidth; px++) {
             int start = (int) Math.floor(px * history.size() / (double) graphWidth);
             int end = (int) Math.floor((px + 1) * history.size() / (double) graphWidth) - 1;
@@ -1547,18 +1555,18 @@ public class TaskManagerScreen extends Screen {
         return height;
     }
 
-    int renderEntityHotspotSection(GuiGraphicsExtractor ctx, int x, int y, int width, java.util.List<ProfilerManager.EntityHotspot> hotspots, String title) {
-        ctx.text(font, title, x, y, TEXT_PRIMARY, false);
+    int renderEntityHotspotSection(GuiGraphics ctx, int x, int y, int width, java.util.List<ProfilerManager.EntityHotspot> hotspots, String title) {
+        ctx.drawString(font, title, x, y, TEXT_PRIMARY, false);
         int rowY = y + 14;
         if (hotspots == null || hotspots.isEmpty()) {
-            ctx.text(font, "No entity hotspots in the current window.", x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, "No entity hotspots in the current window.", x + 6, rowY, TEXT_DIM, false);
             return rowY + 12;
         }
         int shown = 0;
         for (ProfilerManager.EntityHotspot hotspot : hotspots) {
-            ctx.text(font, font.plainSubstrByWidth(hotspot.className() + " x" + hotspot.count(), width), x + 6, rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, font.plainSubstrByWidth(hotspot.className() + " x" + hotspot.count(), width), x + 6, rowY, TEXT_PRIMARY, false);
             rowY += 12;
-            ctx.text(font, font.plainSubstrByWidth(hotspot.heuristic(), width - 6), x + 12, rowY, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth(hotspot.heuristic(), width - 6), x + 12, rowY, TEXT_DIM, false);
             rowY += 14;
             shown++;
             if (shown >= 4) {
@@ -1568,18 +1576,18 @@ public class TaskManagerScreen extends Screen {
         return rowY;
     }
 
-    int renderBlockEntityHotspotSection(GuiGraphicsExtractor ctx, int x, int y, int width, java.util.List<ProfilerManager.BlockEntityHotspot> hotspots, String title) {
-        ctx.text(font, title, x, y, TEXT_PRIMARY, false);
+    int renderBlockEntityHotspotSection(GuiGraphics ctx, int x, int y, int width, java.util.List<ProfilerManager.BlockEntityHotspot> hotspots, String title) {
+        ctx.drawString(font, title, x, y, TEXT_PRIMARY, false);
         int rowY = y + 14;
         if (hotspots == null || hotspots.isEmpty()) {
-            ctx.text(font, "No block entity hotspots in the current window.", x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, "No block entity hotspots in the current window.", x + 6, rowY, TEXT_DIM, false);
             return rowY + 12;
         }
         int shown = 0;
         for (ProfilerManager.BlockEntityHotspot hotspot : hotspots) {
-            ctx.text(font, font.plainSubstrByWidth(hotspot.className() + " x" + hotspot.count(), width), x + 6, rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, font.plainSubstrByWidth(hotspot.className() + " x" + hotspot.count(), width), x + 6, rowY, TEXT_PRIMARY, false);
             rowY += 12;
-            ctx.text(font, font.plainSubstrByWidth(hotspot.heuristic(), width - 6), x + 12, rowY, TEXT_DIM, false);
+            ctx.drawString(font, font.plainSubstrByWidth(hotspot.heuristic(), width - 6), x + 12, rowY, TEXT_DIM, false);
             rowY += 14;
             shown++;
             if (shown >= 4) {
@@ -1612,9 +1620,10 @@ public class TaskManagerScreen extends Screen {
     }
 
 
-    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
-        double mouseX = toLogicalX(click.x());
-        double mouseY = toLogicalY(click.y());
+    @Override
+    public boolean mouseClicked(double rawMouseX, double rawMouseY, int button) {
+        double mouseX = toLogicalX(rawMouseX);
+        double mouseY = toLogicalY(rawMouseY);
         focusedSearchTable = null;
         startupSearchFocused = false;
         globalSearchFocused = false;
@@ -2021,28 +2030,28 @@ public class TaskManagerScreen extends Screen {
             }
         }
 
-        return super.mouseClicked(click, doubled);
+        return super.mouseClicked(rawMouseX, rawMouseY, button);
     }
 
 
 
     @Override
-    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
+    public boolean mouseDragged(double rawMouseX, double rawMouseY, int button, double deltaX, double deltaY) {
         if (draggingHudTransparency && activeTab == 12) {
             int left = PADDING;
             int actionY = getContentY() + PADDING + 18 - scrollOffset;
             actionY += (22 * sessionActionCount()) + 32 + (22 * hudBaseActionCount());
             SliderLayout slider = getHudTransparencySliderLayout(left, actionY, getScreenWidth() - 24);
-            updateHudTransparencyFromMouse(toLogicalX(click.x()), slider);
+            updateHudTransparencyFromMouse(toLogicalX(rawMouseX), slider);
             return true;
         }
-        return super.mouseDragged(click, deltaX, deltaY);
+        return super.mouseDragged(rawMouseX, rawMouseY, button, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(MouseButtonEvent click) {
+    public boolean mouseReleased(double rawMouseX, double rawMouseY, int button) {
         draggingHudTransparency = false;
-        return super.mouseReleased(click);
+        return super.mouseReleased(rawMouseX, rawMouseY, button);
     }
 
     @Override
@@ -2242,105 +2251,105 @@ public class TaskManagerScreen extends Screen {
     }
 
     @Override
-    public boolean charTyped(CharacterEvent input) {
-        if (focusedColorSetting != null && input.isAllowedChatCharacter()) {
-            colorEditValue = normalizeColorEdit(colorEditValue + input.codepointAsString());
+    public boolean charTyped(char chr, int modifiers) {
+        if (focusedColorSetting != null && StringUtil.isAllowedChatCharacter(chr)) {
+            colorEditValue = normalizeColorEdit(colorEditValue + String.valueOf(chr));
             return true;
         }
-        if (globalSearchFocused && input.isAllowedChatCharacter()) {
-            globalSearch += input.codepointAsString();
+        if (globalSearchFocused && StringUtil.isAllowedChatCharacter(chr)) {
+            globalSearch += String.valueOf(chr);
             scrollOffset = 0;
             return true;
         }
-        if (startupSearchFocused && input.isAllowedChatCharacter()) {
-            startupSearch += input.codepointAsString();
+        if (startupSearchFocused && StringUtil.isAllowedChatCharacter(chr)) {
+            startupSearch += String.valueOf(chr);
             scrollOffset = 0;
             return true;
         }
-        if (focusedSearchTable == null || !input.isAllowedChatCharacter()) {
-            return super.charTyped(input);
+        if (focusedSearchTable == null || !StringUtil.isAllowedChatCharacter(chr)) {
+            return super.charTyped(chr, modifiers);
         }
         String current = getSearchValue(focusedSearchTable);
-        setSearchValue(focusedSearchTable, current + input.codepointAsString());
+        setSearchValue(focusedSearchTable, current + String.valueOf(chr));
         scrollOffset = 0;
         return true;
     }
 
     @Override
-    public boolean keyPressed(KeyEvent input) {
-        if ((attributionHelpOpen || activeDrilldownTable != null) && input.key() == 256) {
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if ((attributionHelpOpen || activeDrilldownTable != null) && keyCode == 256) {
             attributionHelpOpen = false;
             activeDrilldownTable = null;
             return true;
         }
-        if (wueffi.taskmanager.client.util.KeyBindHandler.matchesOpenKey(input)) {
+        if (wueffi.taskmanager.client.util.KeyBindHandler.matchesOpenKey(keyCode, scanCode)) {
             onClose();
             return true;
         }
-        if (input.key() == 47) {
+        if (keyCode == 47) {
             globalSearchFocused = true;
             focusedSearchTable = null;
             startupSearchFocused = false;
             return true;
         }
         if (focusedColorSetting != null) {
-            if (input.key() == 259) {
+            if (keyCode == 259) {
                 if (!colorEditValue.isEmpty()) {
                     colorEditValue = colorEditValue.substring(0, Math.max(0, colorEditValue.length() - 1));
                     if (colorEditValue.isEmpty()) colorEditValue = "#";
                 }
                 return true;
             }
-            if (input.key() == 257 || input.key() == 335) {
+            if (keyCode == 257 || keyCode == 335) {
                 applyColorSetting(focusedColorSetting, colorEditValue);
                 focusedColorSetting = null;
                 colorEditValue = "";
                 return true;
             }
-            if (input.key() == 256) {
+            if (keyCode == 256) {
                 focusedColorSetting = null;
                 colorEditValue = "";
                 return true;
             }
         }
         if (startupSearchFocused) {
-            if (input.key() == 259) {
+            if (keyCode == 259) {
                 if (!startupSearch.isEmpty()) {
                     startupSearch = startupSearch.substring(0, startupSearch.length() - 1);
                 }
                 return true;
             }
-            if (input.key() == 256) {
+            if (keyCode == 256) {
                 startupSearchFocused = false;
                 return true;
             }
         }
         if (globalSearchFocused) {
-            if (input.key() == 259) {
+            if (keyCode == 259) {
                 if (!globalSearch.isEmpty()) {
                     globalSearch = globalSearch.substring(0, globalSearch.length() - 1);
                 }
                 return true;
             }
-            if (input.key() == 256) {
+            if (keyCode == 256) {
                 globalSearchFocused = false;
                 return true;
             }
         }
         if (focusedSearchTable != null) {
-            if (input.key() == 259) {
+            if (keyCode == 259) {
                 String current = getSearchValue(focusedSearchTable);
                 if (!current.isEmpty()) {
                     setSearchValue(focusedSearchTable, current.substring(0, current.length() - 1));
                 }
                 return true;
             }
-            if (input.key() == 256) {
+            if (keyCode == 256) {
                 focusedSearchTable = null;
                 return true;
             }
         }
-        return super.keyPressed(input);
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     private String getSearchValue(TableId tableId) {
@@ -2832,7 +2841,7 @@ public class TaskManagerScreen extends Screen {
                 int px = layout.left() + (dx + layout.radius()) * layout.cell();
                 int py = layout.mapTop() + (dz + layout.radius()) * layout.cell();
                 if (mouseX >= px && mouseX < px + layout.cell() && mouseY >= py && mouseY < py + layout.cell()) {
-                    return new ChunkPos(playerChunk.x() + dx, playerChunk.z() + dz);
+                    return new ChunkPos(playerChunk.x + dx, playerChunk.z + dz);
                 }
             }
         }
@@ -2977,7 +2986,7 @@ public class TaskManagerScreen extends Screen {
 
     public static boolean isProfilingActive() {
         Minecraft client = Minecraft.getInstance();
-        return client != null && client.gui.screen() instanceof TaskManagerScreen;
+        return client != null && client.screen instanceof TaskManagerScreen;
     }
 
     public static boolean isLiveMetricsActive() {
@@ -2985,7 +2994,7 @@ public class TaskManagerScreen extends Screen {
     }
 
     public static boolean isMemoryTabActive(Minecraft client) {
-        return client != null && client.gui.screen() instanceof TaskManagerScreen screen && screen.activeTab == 4;
+        return client != null && client.screen instanceof TaskManagerScreen screen && screen.activeTab == 4;
     }
 
     private String formatMode(ProfilerManager.CaptureMode mode) {
@@ -3007,7 +3016,7 @@ public class TaskManagerScreen extends Screen {
         return ready ? ACCENT_GREEN : ACCENT_YELLOW;
     }
 
-    void renderStripedRowVariable(GuiGraphicsExtractor ctx, int x, int width, int rowY, int rowHeight, int rowIdx, int mouseX, int mouseY) {
+    void renderStripedRowVariable(GuiGraphics ctx, int x, int width, int rowY, int rowHeight, int rowIdx, int mouseX, int mouseY) {
         if (rowIdx % 2 == 0) {
             ctx.fill(x, rowY, x + width, rowY + rowHeight, ROW_ALT);
         }
@@ -3035,7 +3044,7 @@ public class TaskManagerScreen extends Screen {
         return hasSubtitle ? y + 28 : y + 16;
     }
 
-    void drawSettingRow(GuiGraphicsExtractor ctx, int x, int y, int width, String label, String value, int mouseX, int mouseY) {
+    void drawSettingRow(GuiGraphics ctx, int x, int y, int width, String label, String value, int mouseX, int mouseY) {
         if (isInside(mouseX, mouseY, x - 4, y - 2, width + 8, 16)) {
             ctx.fill(x - 4, y - 2, x + width + 4, y + 14, 0x1AFFFFFF);
         }
@@ -3043,18 +3052,18 @@ public class TaskManagerScreen extends Screen {
     }
 
 
-    void drawSettingRowWithTooltip(GuiGraphicsExtractor ctx, int x, int y, int width, String label, String value, int mouseX, int mouseY, String tooltip) {
+    void drawSettingRowWithTooltip(GuiGraphics ctx, int x, int y, int width, String label, String value, int mouseX, int mouseY, String tooltip) {
         drawSettingRow(ctx, x, y, width, label, value, mouseX, mouseY);
         addTooltip(x - 4, y - 2, width + 8, 16, tooltip);
     }
 
-    void drawSliderSetting(GuiGraphicsExtractor ctx, int x, int y, int width, String label, int percent, int mouseX, int mouseY) {
+    void drawSliderSetting(GuiGraphics ctx, int x, int y, int width, String label, int percent, int mouseX, int mouseY) {
         if (isInside(mouseX, mouseY, x - 4, y - 2, width + 8, 20)) {
             ctx.fill(x - 4, y - 2, x + width + 4, y + 18, 0x1AFFFFFF);
         }
-        ctx.text(font, label, x, y, TEXT_DIM, false);
+        ctx.drawString(font, label, x, y, TEXT_DIM, false);
         String value = percent + "%";
-        ctx.text(font, value, x + width - font.width(value), y, TEXT_PRIMARY, false);
+        ctx.drawString(font, value, x + width - font.width(value), y, TEXT_PRIMARY, false);
         SliderLayout slider = getHudTransparencySliderLayout(x, y, width);
         ctx.fill(slider.x(), slider.y(), slider.x() + slider.width(), slider.y() + slider.height(), 0x332A2A2A);
         ctx.fill(slider.x(), slider.y(), slider.x() + slider.width(), slider.y() + 1, PANEL_OUTLINE);
@@ -3088,7 +3097,7 @@ public class TaskManagerScreen extends Screen {
         ConfigManager.setHudTransparencyPercent(percent);
     }
 
-    void renderStripedRow(GuiGraphicsExtractor ctx, int x, int width, int rowY, int rowIdx, int mouseX, int mouseY) {
+    void renderStripedRow(GuiGraphics ctx, int x, int width, int rowY, int rowIdx, int mouseX, int mouseY) {
         if (rowIdx % 2 == 0) {
             ctx.fill(x, rowY, x + width, rowY + ROW_HEIGHT, ROW_ALT);
         }
@@ -3097,7 +3106,7 @@ public class TaskManagerScreen extends Screen {
         }
     }
 
-    void renderConfidenceChip(GuiGraphicsExtractor ctx, int x, int y, String confidence) {
+    void renderConfidenceChip(GuiGraphics ctx, int x, int y, String confidence) {
         int width = confidenceChipWidth(confidence);
         int fill = switch (confidence) {
             case "Measured" -> 0x334CAF50;
@@ -3112,7 +3121,7 @@ public class TaskManagerScreen extends Screen {
         ctx.fill(x, y, x + width, y + 12, fill);
         ctx.fill(x, y, x + width, y + 1, border);
         ctx.fill(x, y + 11, x + width, y + 12, border);
-        ctx.text(font, confidence, x + 4, y + 2, TEXT_PRIMARY, false);
+        ctx.drawString(font, confidence, x + 4, y + 2, TEXT_PRIMARY, false);
     }
 
     int confidenceChipWidth(String confidence) {
@@ -3190,24 +3199,24 @@ public class TaskManagerScreen extends Screen {
         return finding.category() + "|" + finding.message();
     }
 
-    void renderResetButton(GuiGraphicsExtractor ctx, int x, int y, int width, int height, boolean active) {
+    void renderResetButton(GuiGraphics ctx, int x, int y, int width, int height, boolean active) {
         ctx.fill(x, y, x + width, y + height, active ? 0x223A3A3A : 0x14141414);
         ctx.fill(x, y, x + width, y + 1, PANEL_OUTLINE);
         ctx.fill(x, y + height - 1, x + width, y + height, PANEL_OUTLINE);
-        ctx.text(font, "Reset", x + 8, y + 4, active ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, "Reset", x + 8, y + 4, active ? TEXT_PRIMARY : TEXT_DIM, false);
     }
 
-    void renderSearchBox(GuiGraphicsExtractor ctx, int x, int y, int width, int height, String placeholder, String value, boolean focused) {
+    void renderSearchBox(GuiGraphics ctx, int x, int y, int width, int height, String placeholder, String value, boolean focused) {
         ctx.fill(x, y, x + width, y + height, focused ? 0x442A2A2A : 0x22181818);
         ctx.fill(x, y, x + width, y + 1, focused ? ACCENT_GREEN : BORDER_COLOR);
         ctx.fill(x, y + height - 1, x + width, y + height, BORDER_COLOR);
         String content = value == null || value.isBlank() ? placeholder : value + (focused ? "_" : "");
         int color = value == null || value.isBlank() ? TEXT_DIM : TEXT_PRIMARY;
-        ctx.text(font, font.plainSubstrByWidth(content, width - 8), x + 4, y + 4, color, false);
+        ctx.drawString(font, font.plainSubstrByWidth(content, width - 8), x + 4, y + 4, color, false);
     }
 
-    void renderSortSummary(GuiGraphicsExtractor ctx, int x, int y, String label, String value, int color) {
-        ctx.text(font, label + ": " + value, x, y, color, false);
+    void renderSortSummary(GuiGraphics ctx, int x, int y, String label, String value, int color) {
+        ctx.drawString(font, label + ": " + value, x, y, color, false);
     }
 
     String headerLabel(String label, boolean active, boolean descending) {
@@ -3225,7 +3234,7 @@ public class TaskManagerScreen extends Screen {
         tooltipManager.add(x, y, width, height, text);
     }
 
-    private void renderTooltipOverlay(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+    private void renderTooltipOverlay(GuiGraphics ctx, int mouseX, int mouseY) {
         tooltipManager.render(ctx, mouseX, mouseY, getScreenWidth(), getScreenHeight(), font, TEXT_PRIMARY, PANEL_OUTLINE);
     }
 
@@ -3245,8 +3254,7 @@ public class TaskManagerScreen extends Screen {
         if (modId.startsWith("runtime/")) {
             return "Runtime / " + cleanProfilerLabel(modId.substring("runtime/".length()));
         }
-        return FabricLoader.getInstance().getModContainer(modId)
-                .map(mod -> mod.getMetadata().getName())
+        return LoaderCompat.getModName(modId)
                 .orElseGet(() -> cleanProfilerLabel(modId));
     }
 
@@ -3267,36 +3275,36 @@ public class TaskManagerScreen extends Screen {
         return "Updated " + formatDuration(ageMillis) + " ago";
     }
 
-    void renderSharedFamiliesPanel(GuiGraphicsExtractor ctx, int x, int y, int width, int height, Map<String, Long> sharedFamilies) {
+    void renderSharedFamiliesPanel(GuiGraphics ctx, int x, int y, int width, int height, Map<String, Long> sharedFamilies) {
         drawInsetPanel(ctx, x, y, width, height);
-        ctx.text(font, "Shared family detail", x + 8, y + 8, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Shared family detail", x + 8, y + 8, TEXT_PRIMARY, false);
         int rowY = y + 20;
         for (Map.Entry<String, Long> entry : sharedFamilies.entrySet()) {
             String label = font.plainSubstrByWidth(cleanProfilerLabel(entry.getKey()), Math.max(80, width - 50));
-            ctx.text(font, label, x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, label, x + 6, rowY, TEXT_DIM, false);
             String value = formatBytesMb(entry.getValue());
-            ctx.text(font, value, x + width - 6 - font.width(value), rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, value, x + width - 6 - font.width(value), rowY, TEXT_PRIMARY, false);
             rowY += 12;
             if (rowY > y + height - 12) break;
         }
     }
 
-    void renderSharedFamilyDetail(GuiGraphicsExtractor ctx, int x, int y, int width, int height, Map<String, Long> classes) {
+    void renderSharedFamilyDetail(GuiGraphics ctx, int x, int y, int width, int height, Map<String, Long> classes) {
         drawInsetPanel(ctx, x, y, width, height);
-        ctx.text(font, "Shared family classes", x + 8, y + 8, TEXT_PRIMARY, false);
+        ctx.drawString(font, "Shared family classes", x + 8, y + 8, TEXT_PRIMARY, false);
         int rowY = y + 20;
         for (Map.Entry<String, Long> entry : classes.entrySet()) {
             String label = font.plainSubstrByWidth(cleanProfilerLabel(entry.getKey()), Math.max(80, width - 50));
-            ctx.text(font, label, x + 6, rowY, TEXT_DIM, false);
+            ctx.drawString(font, label, x + 6, rowY, TEXT_DIM, false);
             String value = formatBytesMb(entry.getValue());
-            ctx.text(font, value, x + width - 6 - font.width(value), rowY, TEXT_PRIMARY, false);
+            ctx.drawString(font, value, x + width - 6 - font.width(value), rowY, TEXT_PRIMARY, false);
             rowY += 12;
             if (rowY > y + height - 12) break;
         }
     }
 
-    void drawMetricRow(GuiGraphicsExtractor ctx, int x, int y, int width, String label, String value) {
-        ctx.text(font, label, x, y, TEXT_DIM, false);
+    void drawMetricRow(GuiGraphics ctx, int x, int y, int width, String label, String value) {
+        ctx.drawString(font, label, x, y, TEXT_DIM, false);
         String shown = font.plainSubstrByWidth(value, Math.max(80, width - 120));
 
         int color = TEXT_PRIMARY;
@@ -3306,7 +3314,7 @@ public class TaskManagerScreen extends Screen {
             color = ACCENT_RED;
         }
 
-        ctx.text(font, shown, x + width - font.width(shown), y, color, false);
+        ctx.drawString(font, shown, x + width - font.width(shown), y, color, false);
     }
 
     String formatBytesMb(long bytes) {
@@ -3477,17 +3485,17 @@ public class TaskManagerScreen extends Screen {
         return Math.max(220, Math.min(availableWidth - (PADDING * 2), 1000));
     }
 
-    void renderMetricGraph(GuiGraphicsExtractor ctx, int x, int y, int width, int height, long[] primary, long[] secondary, String title, String units, double spanSeconds) {
+    void renderMetricGraph(GuiGraphics ctx, int x, int y, int width, int height, long[] primary, long[] secondary, String title, String units, double spanSeconds) {
         int graphHeight = Math.max(96, height);
         renderSeriesGraph(ctx, x + PADDING, y, width - (PADDING * 2), graphHeight, toDoubleArray(primary), toDoubleArray(secondary), title, units, INTEL_COLOR, ACCENT_YELLOW, spanSeconds, true);
     }
 
-    void renderSeriesGraph(GuiGraphicsExtractor ctx, int x, int y, int width, int height, double[] primary, double[] secondary, String title, String units, int primaryColor, int secondaryColor, double spanSeconds) {
+    void renderSeriesGraph(GuiGraphics ctx, int x, int y, int width, int height, double[] primary, double[] secondary, String title, String units, int primaryColor, int secondaryColor, double spanSeconds) {
         renderSeriesGraph(ctx, x, y, width, height, primary, secondary, title, units, primaryColor, secondaryColor, spanSeconds, false);
     }
 
-    void renderSeriesGraph(GuiGraphicsExtractor ctx, int x, int y, int width, int height, double[] primary, double[] secondary, String title, String units, int primaryColor, int secondaryColor, double spanSeconds, boolean drawSmallerOnTop) {
-        ctx.text(font, title + " (" + units + ")", x, y, TEXT_PRIMARY, false);
+    void renderSeriesGraph(GuiGraphics ctx, int x, int y, int width, int height, double[] primary, double[] secondary, String title, String units, int primaryColor, int secondaryColor, double spanSeconds, boolean drawSmallerOnTop) {
+        ctx.drawString(font, title + " (" + units + ")", x, y, TEXT_PRIMARY, false);
         int graphX = x;
         int graphY = y + 14;
         int graphWidth = Math.max(120, width);
@@ -3517,8 +3525,8 @@ public class TaskManagerScreen extends Screen {
         drawAxisLabel(ctx, axisX, graphY - 4, formatGraphValue(max, units));
         drawAxisLabel(ctx, axisX, midY - 4, formatGraphValue(mid, units));
         drawAxisLabel(ctx, axisX, graphY + graphHeight - 8, formatGraphValue(0.0, units));
-        ctx.text(font, formatHistoryWindowLabel(spanSeconds), graphX, graphY + graphHeight + 4, TEXT_DIM, false);
-        ctx.text(font, "now", graphX + plotWidth - font.width("now"), graphY + graphHeight + 4, TEXT_DIM, false);
+        ctx.drawString(font, formatHistoryWindowLabel(spanSeconds), graphX, graphY + graphHeight + 4, TEXT_DIM, false);
+        ctx.drawString(font, "now", graphX + plotWidth - font.width("now"), graphY + graphHeight + 4, TEXT_DIM, false);
 
         if (secondary != null && secondary.length > 0) {
             drawOverlappingSeriesBars(ctx, graphX, graphY, plotWidth, graphHeight, primary, secondary, max, primaryColor, secondaryColor, drawSmallerOnTop);
@@ -3531,7 +3539,7 @@ public class TaskManagerScreen extends Screen {
         }
     }
 
-    int renderGraphLegend(GuiGraphicsExtractor ctx, int x, int y, String[] labels, int[] colors) {
+    int renderGraphLegend(GuiGraphics ctx, int x, int y, String[] labels, int[] colors) {
         int currentX = x;
         int boxSize = 8;
         for (int i = 0; i < labels.length; i++) {
@@ -3539,27 +3547,27 @@ public class TaskManagerScreen extends Screen {
             ctx.fill(currentX, y + 2, currentX + boxSize, y + 2 + boxSize, color);
             ctx.fill(currentX, y + 2, currentX + boxSize, y + 3, 0x66FFFFFF);
             ctx.fill(currentX, y + boxSize + 1, currentX + boxSize, y + boxSize + 2, 0x44000000);
-            ctx.text(font, labels[i], currentX + boxSize + 6, y, TEXT_DIM, false);
+            ctx.drawString(font, labels[i], currentX + boxSize + 6, y, TEXT_DIM, false);
             currentX += boxSize + 6 + font.width(labels[i]) + 14;
         }
         return 12;
     }
 
-    void renderFixedScaleSeriesGraph(GuiGraphicsExtractor ctx, int x, int y, int width, int height, double[] values, String title, String units, int color, double fixedMax, double spanSeconds) {
+    void renderFixedScaleSeriesGraph(GuiGraphics ctx, int x, int y, int width, int height, double[] values, String title, String units, int color, double fixedMax, double spanSeconds) {
         renderFixedScaleSeriesGraph(ctx, x, y, width, height, values, null, title, units, color, 0, fixedMax, spanSeconds);
     }
 
-    void renderGraphMetricTabs(GuiGraphicsExtractor ctx, int x, int y, int width, GraphMetricTab activeMetricTab) {
+    void renderGraphMetricTabs(GuiGraphics ctx, int x, int y, int width, GraphMetricTab activeMetricTab) {
         int loadWidth = 84;
         int temperatureWidth = 120;
         drawTopChip(ctx, x, y, loadWidth, 16, activeMetricTab == GraphMetricTab.LOAD);
         drawTopChip(ctx, x + loadWidth + 6, y, temperatureWidth, 16, activeMetricTab == GraphMetricTab.TEMPERATURE);
-        ctx.text(font, "Load Graph", x + 12, y + 4, activeMetricTab == GraphMetricTab.LOAD ? TEXT_PRIMARY : TEXT_DIM, false);
-        ctx.text(font, "Temperature Graph", x + loadWidth + 18, y + 4, activeMetricTab == GraphMetricTab.TEMPERATURE ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, "Load Graph", x + 12, y + 4, activeMetricTab == GraphMetricTab.LOAD ? TEXT_PRIMARY : TEXT_DIM, false);
+        ctx.drawString(font, "Temperature Graph", x + loadWidth + 18, y + 4, activeMetricTab == GraphMetricTab.TEMPERATURE ? TEXT_PRIMARY : TEXT_DIM, false);
     }
 
-    private void renderFixedScaleLineGraph(GuiGraphicsExtractor ctx, int x, int y, int width, int height, double[] values, String title, String units, int color, double fixedMax, double spanSeconds) {
-        ctx.text(font, title + " (" + units + ")", x, y, TEXT_PRIMARY, false);
+    private void renderFixedScaleLineGraph(GuiGraphics ctx, int x, int y, int width, int height, double[] values, String title, String units, int color, double fixedMax, double spanSeconds) {
+        ctx.drawString(font, title + " (" + units + ")", x, y, TEXT_PRIMARY, false);
         int graphX = x;
         int graphY = y + 14;
         int graphWidth = Math.max(120, width);
@@ -3588,19 +3596,19 @@ public class TaskManagerScreen extends Screen {
         drawAxisLabel(ctx, axisX, graphY - 4, formatGraphValue(max, units));
         drawAxisLabel(ctx, axisX, midY - 4, formatGraphValue(mid, units));
         drawAxisLabel(ctx, axisX, graphY + graphHeight - 8, formatGraphValue(0.0, units));
-        ctx.text(font, formatHistoryWindowLabel(spanSeconds), graphX, graphY + graphHeight + 4, TEXT_DIM, false);
-        ctx.text(font, "now", graphX + plotWidth - font.width("now"), graphY + graphHeight + 4, TEXT_DIM, false);
+        ctx.drawString(font, formatHistoryWindowLabel(spanSeconds), graphX, graphY + graphHeight + 4, TEXT_DIM, false);
+        ctx.drawString(font, "now", graphX + plotWidth - font.width("now"), graphY + graphHeight + 4, TEXT_DIM, false);
         drawSeriesLine(ctx, graphX, graphY, plotWidth, graphHeight, values, max, color);
         drawCurrentValueMarker(ctx, graphX, graphY, plotWidth, graphHeight, axisX, values, max, color, units, 0);
     }
 
-    void renderSensorSeriesGraph(GuiGraphicsExtractor ctx, int x, int y, int width, int height, double[] values, String title, String units, int color, double fixedMax, double spanSeconds, boolean sensorAvailable, String unavailableLabel) {
+    void renderSensorSeriesGraph(GuiGraphics ctx, int x, int y, int width, int height, double[] values, String title, String units, int color, double fixedMax, double spanSeconds, boolean sensorAvailable, String unavailableLabel) {
         if (sensorAvailable) {
             renderFixedScaleLineGraph(ctx, x, y, width, height, sanitizeSeries(values), title, units, color, fixedMax, spanSeconds);
             return;
         }
 
-        ctx.text(font, title + " (" + units + ")", x, y, TEXT_PRIMARY, false);
+        ctx.drawString(font, title + " (" + units + ")", x, y, TEXT_PRIMARY, false);
         int graphX = x;
         int graphY = y + 14;
         int graphWidth = Math.max(120, width);
@@ -3618,8 +3626,8 @@ public class TaskManagerScreen extends Screen {
         String overlay = "Sensor is not available";
         int overlayX = graphX + Math.max(0, (plotWidth - font.width(overlay)) / 2);
         int overlayY = graphY + Math.max(8, (graphHeight / 2) - 4);
-        ctx.text(font, overlay, overlayX, overlayY, TEXT_DIM, false);
-        ctx.text(font, font.plainSubstrByWidth(unavailableLabel, Math.max(80, graphWidth - 12)), x, graphY + graphHeight + 4, TEXT_DIM, false);
+        ctx.drawString(font, overlay, overlayX, overlayY, TEXT_DIM, false);
+        ctx.drawString(font, font.plainSubstrByWidth(unavailableLabel, Math.max(80, graphWidth - 12)), x, graphY + graphHeight + 4, TEXT_DIM, false);
     }
 
     private boolean hasValidSeriesValue(double[] values) {
@@ -3645,8 +3653,8 @@ public class TaskManagerScreen extends Screen {
         return sanitized;
     }
 
-    void renderFixedScaleSeriesGraph(GuiGraphicsExtractor ctx, int x, int y, int width, int height, double[] primary, double[] secondary, String title, String units, int primaryColor, int secondaryColor, double fixedMax, double spanSeconds) {
-        ctx.text(font, title + " (" + units + ")", x, y, TEXT_PRIMARY, false);
+    void renderFixedScaleSeriesGraph(GuiGraphics ctx, int x, int y, int width, int height, double[] primary, double[] secondary, String title, String units, int primaryColor, int secondaryColor, double fixedMax, double spanSeconds) {
+        ctx.drawString(font, title + " (" + units + ")", x, y, TEXT_PRIMARY, false);
         int graphX = x;
         int graphY = y + 14;
         int graphWidth = Math.max(120, width);
@@ -3675,8 +3683,8 @@ public class TaskManagerScreen extends Screen {
         drawAxisLabel(ctx, axisX, graphY - 4, formatGraphValue(max, units));
         drawAxisLabel(ctx, axisX, midY - 4, formatGraphValue(mid, units));
         drawAxisLabel(ctx, axisX, graphY + graphHeight - 8, formatGraphValue(0.0, units));
-        ctx.text(font, formatHistoryWindowLabel(spanSeconds), graphX, graphY + graphHeight + 4, TEXT_DIM, false);
-        ctx.text(font, "now", graphX + plotWidth - font.width("now"), graphY + graphHeight + 4, TEXT_DIM, false);
+        ctx.drawString(font, formatHistoryWindowLabel(spanSeconds), graphX, graphY + graphHeight + 4, TEXT_DIM, false);
+        ctx.drawString(font, "now", graphX + plotWidth - font.width("now"), graphY + graphHeight + 4, TEXT_DIM, false);
         drawSeriesBars(ctx, graphX, graphY, plotWidth, graphHeight, primary, max, primaryColor);
         if (secondary != null && secondary.length > 0) {
             drawSeriesBars(ctx, graphX, graphY, plotWidth, graphHeight, secondary, max, secondaryColor);
@@ -3687,7 +3695,7 @@ public class TaskManagerScreen extends Screen {
         }
     }
 
-    private void drawSeriesLine(GuiGraphicsExtractor ctx, int graphX, int graphY, int graphWidth, int graphHeight, double[] values, double max, int color) {
+    private void drawSeriesLine(GuiGraphics ctx, int graphX, int graphY, int graphWidth, int graphHeight, double[] values, double max, int color) {
         if (values == null || values.length == 0) {
             return;
         }
@@ -3708,7 +3716,7 @@ public class TaskManagerScreen extends Screen {
         }
     }
 
-    private void drawLineSegment(GuiGraphicsExtractor ctx, int x1, int y1, int x2, int y2, int color) {
+    private void drawLineSegment(GuiGraphics ctx, int x1, int y1, int x2, int y2, int color) {
         int steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
         if (steps <= 0) {
             ctx.fill(x1, y1, x1 + 1, y1 + 1, color);
@@ -3721,7 +3729,7 @@ public class TaskManagerScreen extends Screen {
         }
     }
 
-    private void drawSeriesBars(GuiGraphicsExtractor ctx, int graphX, int graphY, int graphWidth, int graphHeight, double[] values, double max, int color) {
+    private void drawSeriesBars(GuiGraphics ctx, int graphX, int graphY, int graphWidth, int graphHeight, double[] values, double max, int color) {
         if (values == null || values.length == 0) {
             return;
         }
@@ -3731,7 +3739,7 @@ public class TaskManagerScreen extends Screen {
         }
     }
 
-    private void drawOverlappingSeriesBars(GuiGraphicsExtractor ctx, int graphX, int graphY, int graphWidth, int graphHeight, double[] primary, double[] secondary, double max, int primaryColor, int secondaryColor, boolean drawSmallerOnTop) {
+    private void drawOverlappingSeriesBars(GuiGraphics ctx, int graphX, int graphY, int graphWidth, int graphHeight, double[] primary, double[] secondary, double max, int primaryColor, int secondaryColor, boolean drawSmallerOnTop) {
         for (int px = 0; px < graphWidth; px++) {
             double primaryPeak = peakSeriesValue(primary, px, graphWidth);
             double secondaryPeak = peakSeriesValue(secondary, px, graphWidth);
@@ -3764,7 +3772,7 @@ public class TaskManagerScreen extends Screen {
         return peak;
     }
 
-    private void drawSeriesBarColumn(GuiGraphicsExtractor ctx, int graphX, int graphY, int graphHeight, double max, int color, int px, double peak) {
+    private void drawSeriesBarColumn(GuiGraphics ctx, int graphX, int graphY, int graphHeight, double max, int color, int px, double peak) {
         int valueHeight = (int) Math.min(graphHeight, Math.round((peak / Math.max(1.0, max)) * graphHeight));
         if (valueHeight <= 0) {
             return;
@@ -3773,7 +3781,7 @@ public class TaskManagerScreen extends Screen {
         ctx.fill(barX, graphY + graphHeight - valueHeight, barX + 1, graphY + graphHeight, color);
     }
 
-    private void drawCurrentValueMarker(GuiGraphicsExtractor ctx, int graphX, int graphY, int plotWidth, int graphHeight, int axisX, double[] values, double max, int color, String units, int yOffset) {
+    private void drawCurrentValueMarker(GuiGraphics ctx, int graphX, int graphY, int plotWidth, int graphHeight, int axisX, double[] values, double max, int color, String units, int yOffset) {
         double currentValue = latestGraphValue(values);
         if (!Double.isFinite(currentValue)) {
             return;
@@ -3784,7 +3792,7 @@ public class TaskManagerScreen extends Screen {
         ctx.fill(tickX, markerY, tickX + 8, markerY + 1, color);
         String label = formatGraphValue(currentValue, units);
         int labelY = Math.max(graphY - 4, Math.min(graphY + graphHeight - 8, markerY - 4));
-        ctx.text(font, label, axisX, labelY, color, false);
+        ctx.drawString(font, label, axisX, labelY, color, false);
     }
 
     private double latestGraphValue(double[] values) {
@@ -3799,8 +3807,8 @@ public class TaskManagerScreen extends Screen {
         return Double.NaN;
     }
 
-    private void drawAxisLabel(GuiGraphicsExtractor ctx, int x, int y, String text) {
-        ctx.text(font, text, x, y, TEXT_DIM, false);
+    private void drawAxisLabel(GuiGraphics ctx, int x, int y, String text) {
+        ctx.drawString(font, text, x, y, TEXT_DIM, false);
     }
 
     private double niceGraphMax(double[] primary, double[] secondary) {
@@ -3846,11 +3854,11 @@ public class TaskManagerScreen extends Screen {
         return String.format(Locale.ROOT, "%.1fs", millis / 1000.0);
     }
 
-    private void renderFlamegraph(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+    private void renderFlamegraph(GuiGraphics ctx, int x, int y, int w, int h) {
         FlamegraphTabRenderer.render(this, ctx, x, y, w, h);
     }
 
-    private void renderTimeline(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+    private void renderTimeline(GuiGraphics ctx, int x, int y, int w, int h) {
         TimelineTabRenderer.render(this, ctx, x, y, w, h);
     }
 
@@ -3862,18 +3870,18 @@ public class TaskManagerScreen extends Screen {
         return new ModalLayout(x, y, width, height);
     }
 
-    void renderAttributionHelpOverlay(GuiGraphicsExtractor ctx, int screenWidth, int screenHeight, int mouseX, int mouseY) {
+    void renderAttributionHelpOverlay(GuiGraphics ctx, int screenWidth, int screenHeight, int mouseX, int mouseY) {
         ctx.fill(0, 0, screenWidth, screenHeight, 0xAA000000);
         ModalLayout modal = getCenteredModalLayout(screenWidth, screenHeight, Math.min(900, screenWidth - 32), Math.min(560, screenHeight - 48));
         drawInsetPanel(ctx, modal.x(), modal.y(), modal.width(), modal.height());
         drawTopChip(ctx, modal.x() + modal.width() - 62, modal.y() + 10, 52, 16, false);
-        ctx.text(font, "Close", modal.x() + modal.width() - 47, modal.y() + 14, TEXT_DIM, false);
-        ctx.text(font, "Attribution Guide", modal.x() + 12, modal.y() + 12, TEXT_PRIMARY, false);
-        ctx.text(font, font.plainSubstrByWidth("A quick guide to what is measured directly, what is inferred, and what is redistributed for readability.", modal.width() - 90), modal.x() + 12, modal.y() + 24, TEXT_DIM, false);
+        ctx.drawString(font, "Close", modal.x() + modal.width() - 47, modal.y() + 14, TEXT_DIM, false);
+        ctx.drawString(font, "Attribution Guide", modal.x() + 12, modal.y() + 12, TEXT_PRIMARY, false);
+        ctx.drawString(font, font.plainSubstrByWidth("A quick guide to what is measured directly, what is inferred, and what is redistributed for readability.", modal.width() - 90), modal.x() + 12, modal.y() + 24, TEXT_DIM, false);
         int contentX = modal.x() + 12;
         int contentY = modal.y() + 48;
         int contentW = modal.width() - 24;
-        ctx.enableScissor(modal.x() + 6, modal.y() + 40, modal.x() + modal.width() - 6, modal.y() + modal.height() - 6);
+        wueffi.taskmanager.client.util.GuiCompat.enableScissor(ctx, modal.x() + 6, modal.y() + 40, modal.x() + modal.width() - 6, modal.y() + modal.height() - 6);
         contentY = renderWrappedText(ctx, contentX, contentY, contentW, "Measured: data we directly observed, like sampled CPU stacks, JVM class histograms, GPU timer-query phase timings, or hardware counters.", TEXT_PRIMARY) + 8;
         contentY = renderWrappedText(ctx, contentX, contentY, contentW, "Inferred: data we can explain from nearby evidence but do not directly own with perfect certainty, like shared/framework work or render-thread influence.", TEXT_PRIMARY) + 8;
         contentY = renderWrappedText(ctx, contentX, contentY, contentW, "Estimated: GPU per-mod ownership is still an estimate because the driver exposes total timings more readily than exact per-mod boundaries. Tagged phase owners reduce the guesswork, but some render work still lands in shared/render.", TEXT_PRIMARY) + 12;
@@ -3883,7 +3891,7 @@ public class TaskManagerScreen extends Screen {
         ctx.disableScissor();
     }
 
-    void renderRowDrilldownOverlay(GuiGraphicsExtractor ctx, int screenWidth, int screenHeight, int mouseX, int mouseY) {
+    void renderRowDrilldownOverlay(GuiGraphics ctx, int screenWidth, int screenHeight, int mouseX, int mouseY) {
         String modId = getActiveDrilldownModId();
         if (modId == null) {
             activeDrilldownTable = null;
@@ -3893,14 +3901,14 @@ public class TaskManagerScreen extends Screen {
         ModalLayout modal = getCenteredModalLayout(screenWidth, screenHeight, Math.min(920, screenWidth - 32), Math.min(620, screenHeight - 48));
         drawInsetPanel(ctx, modal.x(), modal.y(), modal.width(), modal.height());
         drawTopChip(ctx, modal.x() + modal.width() - 62, modal.y() + 10, 52, 16, false);
-        ctx.text(font, "Close", modal.x() + modal.width() - 47, modal.y() + 14, TEXT_DIM, false);
+        ctx.drawString(font, "Close", modal.x() + modal.width() - 47, modal.y() + 14, TEXT_DIM, false);
         String title = switch (activeDrilldownTable) {
             case TASKS -> "CPU Row Drilldown";
             case GPU -> "GPU Row Drilldown";
             case MEMORY -> "Memory Row Drilldown";
         };
-        ctx.text(font, title, modal.x() + 12, modal.y() + 12, TEXT_PRIMARY, false);
-        ctx.text(font, font.plainSubstrByWidth(getDisplayName(modId), modal.width() - 90), modal.x() + 12, modal.y() + 24, ACCENT_YELLOW, false);
+        ctx.drawString(font, title, modal.x() + 12, modal.y() + 12, TEXT_PRIMARY, false);
+        ctx.drawString(font, font.plainSubstrByWidth(getDisplayName(modId), modal.width() - 90), modal.x() + 12, modal.y() + 24, ACCENT_YELLOW, false);
         if (activeDrilldownTable == TableId.TASKS) {
             renderCpuDrilldownContent(ctx, modal, modId);
         } else if (activeDrilldownTable == TableId.GPU) {
@@ -3921,7 +3929,7 @@ public class TaskManagerScreen extends Screen {
         };
     }
 
-    private void renderCpuDrilldownContent(GuiGraphicsExtractor ctx, ModalLayout modal, String modId) {
+    private void renderCpuDrilldownContent(GuiGraphics ctx, ModalLayout modal, String modId) {
         Map<String, CpuSamplingProfiler.Snapshot> rawCpu = snapshot.cpuMods();
         EffectiveCpuAttribution effectiveCpu = effectiveCpuAttribution();
         CpuSamplingProfiler.Snapshot rawSnapshot = rawCpu.getOrDefault(modId, new CpuSamplingProfiler.Snapshot(0, 0, 0));
@@ -3934,7 +3942,7 @@ public class TaskManagerScreen extends Screen {
         int contentX = modal.x() + 12;
         int contentY = modal.y() + 46;
         int contentW = modal.width() - 24;
-        ctx.enableScissor(modal.x() + 6, modal.y() + 40, modal.x() + modal.width() - 6, modal.y() + modal.height() - 6);
+        wueffi.taskmanager.client.util.GuiCompat.enableScissor(ctx, modal.x() + 6, modal.y() + 40, modal.x() + modal.width() - 6, modal.y() + modal.height() - 6);
         contentY = renderWrappedText(ctx, contentX, contentY, contentW, String.format(Locale.ROOT, "%s view | current %.1f%% CPU | raw %s samples | effective %s samples", taskEffectiveView ? "Effective" : "Raw", cpuMetricValue(displaySnapshot) * 100.0 / Math.max(1L, (taskEffectiveView ? totalCpuMetric(effectiveCpu.displaySnapshots()) : totalCpuMetric(rawCpu))), formatCount(rawSnapshot.totalSamples()), formatCount(effectiveSnapshot.totalSamples())), TEXT_DIM) + 6;
         contentY = renderWrappedText(ctx, contentX, contentY, contentW, "Why this row: sampled stack ownership points here directly, while shared/framework buckets are proportionally redistributed only in Effective view.", TEXT_DIM) + 8;
         String attributionHint = cpuAttributionHint(modId, detail, rawSnapshot.totalSamples(), displaySnapshot.totalSamples(), redistributedSamples);
@@ -3951,7 +3959,7 @@ public class TaskManagerScreen extends Screen {
         ctx.disableScissor();
     }
 
-    private void renderGpuDrilldownContent(GuiGraphicsExtractor ctx, ModalLayout modal, String modId) {
+    private void renderGpuDrilldownContent(GuiGraphics ctx, ModalLayout modal, String modId) {
         EffectiveGpuAttribution rawGpu = rawGpuAttribution();
         EffectiveGpuAttribution displayGpu = gpuEffectiveView ? effectiveGpuAttribution() : rawGpu;
         CpuSamplingProfiler.DetailSnapshot detail = snapshot.cpuDetails().get(modId);
@@ -3961,7 +3969,7 @@ public class TaskManagerScreen extends Screen {
         int contentX = modal.x() + 12;
         int contentY = modal.y() + 46;
         int contentW = modal.width() - 24;
-        ctx.enableScissor(modal.x() + 6, modal.y() + 40, modal.x() + modal.width() - 6, modal.y() + modal.height() - 6);
+        wueffi.taskmanager.client.util.GuiCompat.enableScissor(ctx, modal.x() + 6, modal.y() + 40, modal.x() + modal.width() - 6, modal.y() + modal.height() - 6);
         contentY = renderWrappedText(ctx, contentX, contentY, contentW, String.format(Locale.ROOT, "%s view | current %.1f%% GPU | raw %.2f ms | effective %.2f ms", gpuEffectiveView ? "Effective" : "Raw", displayGpuNanos * 100.0 / Math.max(1L, displayGpu.totalGpuNanos()), rawGpu.gpuNanosByMod().getOrDefault(modId, 0L) / 1_000_000.0, displayGpuNanos / 1_000_000.0), TEXT_DIM) + 6;
         contentY = renderWrappedText(ctx, contentX, contentY, contentW, "Why this row: tagged render-phase owners get first claim on GPU time, then leftover shared/render work is redistributed only in Effective view.", TEXT_DIM) + 8;
         renderSeriesGraph(ctx, contentX, contentY, contentW, 124, trend, null, "GPU Trend (last ~30s)", "% GPU", getGpuGraphColor(), 0, getTrendSpanSeconds(recentPoints));
@@ -3979,7 +3987,7 @@ public class TaskManagerScreen extends Screen {
         ctx.disableScissor();
     }
 
-    private void renderMemoryDrilldownContent(GuiGraphicsExtractor ctx, ModalLayout modal, String modId) {
+    private void renderMemoryDrilldownContent(GuiGraphics ctx, ModalLayout modal, String modId) {
         Map<String, Long> rawMemory = snapshot.memoryMods();
         EffectiveMemoryAttribution effectiveMemory = effectiveMemoryAttribution();
         Map<String, Long> displayMemory = memoryEffectiveView ? effectiveMemory.displayBytes() : rawMemory;
@@ -3988,7 +3996,7 @@ public class TaskManagerScreen extends Screen {
         int contentX = modal.x() + 12;
         int contentY = modal.y() + 46;
         int contentW = modal.width() - 24;
-        ctx.enableScissor(modal.x() + 6, modal.y() + 40, modal.x() + modal.width() - 6, modal.y() + modal.height() - 6);
+        wueffi.taskmanager.client.util.GuiCompat.enableScissor(ctx, modal.x() + 6, modal.y() + 40, modal.x() + modal.width() - 6, modal.y() + modal.height() - 6);
         contentY = renderWrappedText(ctx, contentX, contentY, contentW, String.format(Locale.ROOT, "%s view | current %.1f MB shown | raw %.1f MB | effective %.1f MB", memoryEffectiveView ? "Effective" : "Raw", displayMemory.getOrDefault(modId, 0L) / (1024.0 * 1024.0), rawMemory.getOrDefault(modId, 0L) / (1024.0 * 1024.0), effectiveMemory.displayBytes().getOrDefault(modId, rawMemory.getOrDefault(modId, 0L)) / (1024.0 * 1024.0)), TEXT_DIM) + 6;
         contentY = renderWrappedText(ctx, contentX, contentY, contentW, "Why this row: live class ownership points here directly, while shared/runtime buckets are redistributed only in Effective view.", TEXT_DIM) + 8;
         renderSeriesGraph(ctx, contentX, contentY, contentW, 124, trend, null, "Memory Trend (last ~30s)", "MB", getMemoryGraphColor(), 0, getTrendSpanSeconds(recentPoints));
@@ -4037,7 +4045,7 @@ public class TaskManagerScreen extends Screen {
         return values;
     }
 
-    private void renderSettings(GuiGraphicsExtractor ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
+    private void renderSettings(GuiGraphics ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
         SettingsTabRenderer.render(this, ctx, x, y, w, h, mouseX, mouseY);
     }
 

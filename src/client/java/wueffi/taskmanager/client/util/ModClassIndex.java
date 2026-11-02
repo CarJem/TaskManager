@@ -1,7 +1,7 @@
 package wueffi.taskmanager.client.util;
 
-import net.fabricmc.loader.api.FabricLoader;
-import net.fabricmc.loader.api.ModContainer;
+import net.neoforged.neoforgespi.language.IModInfo;
+import net.neoforged.neoforgespi.locating.IModFile;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,23 +19,53 @@ public class ModClassIndex {
     private static final Map<String, String> cache = BoundedMaps.synchronizedLru(MAX_CLASS_CACHE_ENTRIES);
     private static final Map<String, String> normalizedRootToMod = BoundedMaps.synchronizedLru(MAX_ROOT_CACHE_ENTRIES);
     private static final Map<String, String> packageCache = BoundedMaps.synchronizedLru(MAX_PACKAGE_CACHE_ENTRIES);
+    private static final Map<String, String> moduleToMod = new java.util.concurrent.ConcurrentHashMap<>();
     private static boolean built = false;
 
     public static void build() {
         if (built) return;
         built = true;
 
-        for (ModContainer container : FabricLoader.getInstance().getAllMods()) {
-            String modId = container.getMetadata().getId();
-            for (Path root : container.getRootPaths()) {
-                try {
-                    String normalized = normalizePath(root.toUri().toURL().toString());
-                    BoundedMaps.put(normalizedRootToMod, normalized, modId);
-                    scanRootForClassPackages(root, modId);
-                } catch (Exception ignored) {
+        for (IModInfo info : LoaderCompat.getAllMods()) {
+            String modId = info.getModId();
+            IModFile modFile = LoaderCompat.getModFile(info).orElse(null);
+            if (modFile == null) {
+                continue;
+            }
+            try {
+                Path filePath = modFile.getFilePath();
+                if (filePath != null) {
+                    BoundedMaps.put(normalizedRootToMod, normalizePath(filePath.toUri().toURL().toString()), modId);
                 }
+            } catch (Throwable ignored) {
+            }
+            try {
+                String moduleName = modFile.getSecureJar().name();
+                if (moduleName != null && !moduleName.isBlank()) {
+                    moduleToMod.putIfAbsent(moduleName, modId);
+                }
+            } catch (Throwable ignored) {
+            }
+            try {
+                scanRootForClassPackages(modFile.getSecureJar().getRootPath(), modId);
+            } catch (Throwable ignored) {
             }
         }
+    }
+
+    /**
+     * NeoForge loads mod classes into named JPMS modules (one per mod file), so the module
+     * name is the most reliable way to map a class back to the mod that ships it.
+     */
+    private static String lookupModule(Class<?> clazz) {
+        try {
+            Module module = clazz.getModule();
+            if (module != null && module.isNamed()) {
+                return moduleToMod.get(module.getName());
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
     }
 
     public static String getModForClassName(Class<?> clazz) {
@@ -51,6 +81,12 @@ public class ModClassIndex {
         if (packageHit != null) {
             BoundedMaps.put(cache, className, encodeCachedValue(packageHit));
             return packageHit;
+        }
+
+        String moduleHit = lookupModule(clazz);
+        if (moduleHit != null) {
+            BoundedMaps.put(cache, className, encodeCachedValue(moduleHit));
+            return moduleHit;
         }
 
         String classSource = null;
@@ -143,6 +179,7 @@ public class ModClassIndex {
 
     private static String normalizePath(String url) {
         return url
+                .replace("union:", "")
                 .replace("jar:file:///", "")
                 .replace("jar:file://", "")
                 .replace("jar:file:/", "")

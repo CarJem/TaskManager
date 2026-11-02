@@ -1,8 +1,8 @@
 package wueffi.taskmanager.client.mixin;
 
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
+import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -19,7 +19,7 @@ public class ClientConnectionMixin {
     }
 
     @Inject(method = "doSendPacket", at = @At("HEAD"))
-    private void taskmanager$onSendInternal(Packet<?> packet, ChannelFutureListener callbacks, boolean flush, CallbackInfo ci) {
+    private void taskmanager$onSendInternal(Packet<?> packet, PacketSendListener sendListener, boolean flush, CallbackInfo ci) {
         NetworkPacketProfiler.getInstance().recordOutbound(packet);
     }
 }

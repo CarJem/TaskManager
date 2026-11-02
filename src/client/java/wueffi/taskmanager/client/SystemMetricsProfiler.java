@@ -828,8 +828,8 @@ public class SystemMetricsProfiler {
                 .filter(phase -> phase.ownerMod() != null && !phase.ownerMod().isBlank() && !phase.ownerMod().startsWith("shared/"))
                 .count();
         double sharedPct = totalGpuNanos > 0L ? sharedGpuNanos * 100.0 / totalGpuNanos : 0.0;
-        boolean irisLoaded = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("iris");
-        boolean sodiumLoaded = net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("sodium");
+        boolean irisLoaded = wueffi.taskmanager.client.util.LoaderCompat.isModLoaded("iris");
+        boolean sodiumLoaded = wueffi.taskmanager.client.util.LoaderCompat.isModLoaded("sodium");
         List<String> coveredPaths = renderPhases.keySet().stream()
                 .filter(name -> name != null && (name.contains("world") || name.contains("sky") || name.contains("particle") || name.contains("outline")))
                 .limit(4)
@@ -996,8 +996,8 @@ public class SystemMetricsProfiler {
             lastPlayerSampleAtMillis = now;
             lastPlayerPosValid = true;
 
-            int chunkX = client.player.chunkPosition().x();
-            int chunkZ = client.player.chunkPosition().z();
+            int chunkX = client.player.chunkPosition().x;
+            int chunkZ = client.player.chunkPosition().z;
             if (!lastPlayerChunkValid || chunkX != lastPlayerChunkX || chunkZ != lastPlayerChunkZ) {
                 chunkEntryTimes.addLast(now);
                 lastPlayerChunkX = chunkX;
@@ -1302,7 +1302,7 @@ public class SystemMetricsProfiler {
             if (client.level == null || client.player == null) {
                 return "unknown";
             }
-            return client.level.getBiome(client.player.blockPosition()).unwrapKey().map(key -> key.identifier().toString()).orElse("unknown");
+            return client.level.getBiome(client.player.blockPosition()).unwrapKey().map(key -> key.location().toString()).orElse("unknown");
         } catch (Throwable ignored) {
             return "unknown";
         }
@@ -1314,7 +1314,7 @@ public class SystemMetricsProfiler {
             if (client.levelRenderer == null) {
                 return "unavailable";
             }
-            String debug = client.levelExtractor.sectionStatistics();
+            String debug = client.levelRenderer.getSectionStatistics();
             if (debug == null || debug.isBlank()) {
                 return "unavailable";
             }
