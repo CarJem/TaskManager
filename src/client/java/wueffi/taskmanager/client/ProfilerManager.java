@@ -2806,7 +2806,7 @@ public class ProfilerManager {
     }
 
     private ChunkCounts sampleChunkCounts(Minecraft client) {
-        if (client.levelRenderer == null) {
+        if (client.levelRenderer == null || client.level == null) {
             return ChunkCounts.empty();
         }
 
@@ -2816,7 +2816,13 @@ public class ProfilerManager {
         }
         lastChunkCountsAtMillis = now;
 
-        String debug = client.levelRenderer.getSectionStatistics();
+        String debug;
+        try {
+            // 1.21.1 throws if the section storage has not been created yet (no world rendered).
+            debug = client.levelRenderer.getSectionStatistics();
+        } catch (RuntimeException ignored) {
+            return ChunkCounts.empty();
+        }
         if (debug == null || debug.isBlank()) {
             return ChunkCounts.empty();
         }

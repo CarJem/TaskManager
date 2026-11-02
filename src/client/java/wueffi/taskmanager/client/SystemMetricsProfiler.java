@@ -1311,7 +1311,7 @@ public class SystemMetricsProfiler {
     private String sampleLightQueue() {
         try {
             Minecraft client = Minecraft.getInstance();
-            if (client.levelRenderer == null) {
+            if (client.levelRenderer == null || client.level == null) {
                 return "unavailable";
             }
             String debug = client.levelRenderer.getSectionStatistics();
