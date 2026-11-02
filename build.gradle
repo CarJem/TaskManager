@@ -56,6 +56,9 @@ neoForge {
     }
 }
 
+// The deterministic unit checks touch classes that reference Minecraft types.
+neoForge.addModdingDependenciesTo(sourceSets.test)
+
 repositories {
     mavenLocal()
 }
